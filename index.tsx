@@ -666,7 +666,6 @@ function calculateTotals() {
 
     const customCost = state.customItems.reduce((acc, item) => {
         if (item.model && item.quantity > 0) {
-            // FIX: Corrected a reference error where `model` was used instead of `item.model`.
             const cost = state.priceData.prices[item.category]?.[item.model] ?? 0;
             return acc + (cost * item.quantity);
         }
@@ -885,8 +884,8 @@ async function handleAuthAction(e: Event) {
         } else { // signUp
             const fullNameInput = ($('#full_name') as HTMLInputElement);
             const phoneInput = ($('#phone') as HTMLInputElement);
-            const full_name = fullNameInput.value;
-            const phone = phoneInput.value;
+            const full_name = fullNameInput.value.trim();
+            const phone = phoneInput.value.trim();
             if (!full_name || !phone) {
                 throw new Error("姓名和手机号不能为空");
             }
@@ -1269,7 +1268,6 @@ function addEventListeners() {
                             return;
                         }
                         const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
-                        // FIX: Corrected a TypeError. The `.trim()` method cannot be called on an array returned by `.split()`. The fix uses `.map()` to apply `trim()` to each string element of the array.
                         const dataAsArrays = lines.map(line => line.split(/[,，\t]/).map(p => p.trim()));
                         processImportedData(dataAsArrays);
                     };
