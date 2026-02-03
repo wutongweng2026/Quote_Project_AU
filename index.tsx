@@ -20,6 +20,8 @@ interface CustomModalState {
     cancelText: string;
     showCancel: boolean;
     isDanger: boolean;
+    inputType?: 'text' | 'password';
+    errorMessage?: string;
 }
 interface AppState {
     priceData: PriceData;
@@ -70,7 +72,7 @@ const state: AppState = {
     customItems: [],
     newCategory: '',
     specialDiscount: 0,
-    markupPoints: 15,
+    markupPoints: 12,
     adminSearchTerm: '',
     showCustomModal: false,
     customModal: {
@@ -106,12 +108,14 @@ function render() {
 
 function renderCustomModal() {
     if (!state.showCustomModal) return '';
-    const { title, message, confirmText, cancelText, showCancel, isDanger } = state.customModal;
+    const { title, message, confirmText, cancelText, showCancel, isDanger, inputType, errorMessage } = state.customModal;
     return `
         <div class="modal-overlay" id="custom-modal-overlay">
             <div class="modal-content">
                 <h2>${title}</h2>
                 <p>${message}</p>
+                ${inputType ? `<input type="${inputType}" id="modal-input" class="modal-input" autofocus />` : ''}
+                <div class="modal-error">${errorMessage || ''}</div>
                 <div class="modal-buttons">
                     ${showCancel ? `<button class="modal-cancel-btn" id="custom-modal-cancel-btn">${cancelText}</button>` : ''}
                     <button class="modal-confirm-btn ${isDanger ? 'danger' : ''}" id="custom-modal-confirm-btn">${confirmText}</button>
@@ -177,7 +181,7 @@ function renderQuoteTool() {
                     <div class="control-group">
                          <label for="markup-points-input">点位:</label>
                         <div class="points-input-group">
-                           <input type="number" id="markup-points-input" value="${state.markupPoints}" placeholder="例如: 15" />
+                           <input type="number" id="markup-points-input" value="${state.markupPoints}" placeholder="例如: 12" />
                            <span>点</span>
                         </div>
                     </div>
@@ -283,6 +287,27 @@ function renderAdminPanel() {
         
         <div class="admin-content">
             <div class="admin-section">
+                <h3 class="admin-section-header">折扣阶梯管理</h3>
+                <div class="admin-section-body">
+                    <div id="tiered-discount-list">
+                        ${state.priceData.tieredDiscounts.map(tier => `
+                            <div class="tier-row" data-id="${tier.id}">
+                                <span>满</span>
+                                <input type="number" class="tier-threshold-input" value="${tier.threshold}" placeholder="数量">
+                                <span>件, 打</span>
+                                <input type="number" step="0.01" class="tier-rate-input" value="${tier.rate}" placeholder="折扣率 (0.98)">
+                                <span>折</span>
+                                <button class="remove-tier-btn" data-id="${tier.id}">删除</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                     <div class="tier-row" style="margin-top: 1rem;">
+                        <button id="add-tier-btn" class="add-tier-btn">添加新折扣阶梯</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="admin-section">
                 <h3 class="admin-section-header">快速录入配件</h3>
                 <div class="admin-section-body">
                     <div class="quick-add-form">
@@ -335,6 +360,7 @@ function showModal(options: Partial<CustomModalState>) {
         cancelText: '取消',
         showCancel: false,
         isDanger: false,
+        errorMessage: '',
         ...options
     };
     state.showCustomModal = true;
@@ -554,14 +580,32 @@ function addEventListeners() {
         if(button && button.id === 'custom-modal-cancel-btn') {
             state.showCustomModal = false; render();
         } else if (button && button.id === 'custom-modal-confirm-btn') {
-            if (state.customModal.onConfirm) {
-                state.customModal.onConfirm();
+            if (state.customModal.title === '管理员登录') {
+                const passwordInput = $('#modal-input') as HTMLInputElement;
+                if (passwordInput && passwordInput.value === '112@') {
+                    state.view = 'admin';
+                    state.showCustomModal = false;
+                    render();
+                } else {
+                    state.customModal.errorMessage = '密码错误，请重试。';
+                    render(); // Re-render modal with error
+                }
+            } else {
+                if (state.customModal.onConfirm) {
+                    state.customModal.onConfirm();
+                }
+                state.showCustomModal = false;
+                render();
             }
-            state.showCustomModal = false;
-            render();
         } else if (button && button.id === 'app-view-toggle-btn') {
-            state.view = 'admin';
-            render();
+            showModal({
+                title: '管理员登录',
+                message: '请输入密码以访问后台管理。',
+                inputType: 'password',
+                showCancel: true,
+                confirmText: '确认',
+                onConfirm: null
+            });
         } else if (button && button.id === 'back-to-quote-btn') {
             state.view = 'quote';
             render();
@@ -570,7 +614,7 @@ function addEventListeners() {
             state.customItems = [];
             state.newCategory = '';
             state.specialDiscount = 0;
-            state.markupPoints = 15;
+            state.markupPoints = 12;
             render();
         } else if (button && button.classList.contains('remove-item-btn') && row) {
             const category = row.dataset.category;
@@ -657,6 +701,15 @@ function addEventListeners() {
                     }
                 });
             }
+        } else if (button && button.id === 'add-tier-btn') {
+            const newTier = { id: Date.now(), threshold: 0, rate: 0.98 };
+            state.priceData.tieredDiscounts.push(newTier);
+            state.priceData.tieredDiscounts.sort((a,b) => a.threshold - b.threshold);
+            render();
+        } else if (button && button.classList.contains('remove-tier-btn')) {
+            const tierId = Number(button.dataset.id);
+            state.priceData.tieredDiscounts = state.priceData.tieredDiscounts.filter(t => t.id !== tierId);
+            render();
         }
 
     });
@@ -667,6 +720,20 @@ function addEventListeners() {
         
         if (target.id === 'new-category-input') { state.newCategory = target.value; return; }
         
+        const tierRow = target.closest<HTMLDivElement>('.tier-row');
+        if (tierRow && tierRow.dataset.id) {
+            const tierId = Number(tierRow.dataset.id);
+            const tier = state.priceData.tieredDiscounts.find(t => t.id === tierId);
+            if (tier) {
+                if (target.classList.contains('tier-threshold-input')) {
+                    tier.threshold = parseInt(target.value, 10) || 0;
+                } else if (target.classList.contains('tier-rate-input')) {
+                    tier.rate = parseFloat(target.value) || 0;
+                }
+            }
+            return;
+        }
+
         if (target.id === 'admin-search-input') {
             const searchValue = target.value;
             const selectionStart = target.selectionStart;
