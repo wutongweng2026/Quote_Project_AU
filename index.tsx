@@ -23,11 +23,13 @@ interface CustomModalState {
 }
 interface AppState {
     priceData: PriceData;
+    view: 'quote' | 'admin';
     selection: SelectionState;
     customItems: CustomItem[];
     newCategory: string;
     specialDiscount: number;
     markupPoints: number;
+    adminSearchTerm: string;
     showCustomModal: boolean;
     customModal: CustomModalState;
 }
@@ -62,12 +64,14 @@ const getInitialSelection = (): SelectionState => ({
 });
 
 const state: AppState = {
-    priceData: PRICE_DATA,
+    priceData: JSON.parse(JSON.stringify(PRICE_DATA)), // Deep copy to allow modification
+    view: 'quote',
     selection: getInitialSelection(),
     customItems: [],
     newCategory: '',
     specialDiscount: 0,
     markupPoints: 15,
+    adminSearchTerm: '',
     showCustomModal: false,
     customModal: {
         title: '',
@@ -86,12 +90,19 @@ const appContainer = $('#app')!;
 
 // --- RENDER FUNCTIONS ---
 function render() {
-    let html = renderQuoteTool();
+    let html = '';
+    if (state.view === 'quote') {
+        html = renderQuoteTool();
+    } else if (state.view === 'admin') {
+        html = renderAdminPanel();
+    }
+
     if (state.showCustomModal) {
         html += renderCustomModal();
     }
     appContainer.innerHTML = html;
 }
+
 
 function renderCustomModal() {
     if (!state.showCustomModal) return '';
@@ -117,6 +128,9 @@ function renderQuoteTool() {
         <div class="quoteContainer">
             <header class="quoteHeader">
                 <h1>产品报价系统 <span>v1.01 - 龙盛科技</span></h1>
+                 <div class="header-actions">
+                    <button class="admin-button" id="app-view-toggle-btn">后台管理</button>
+                </div>
             </header>
 
             <main class="quoteBody">
@@ -246,6 +260,70 @@ function renderAddCategoryRow() {
         </tr>
     `;
 }
+
+function renderAdminPanel() {
+    const searchTerm = (state.adminSearchTerm || '').toLowerCase();
+    const filteredPriceEntries = Object.entries(state.priceData.prices)
+        .map(([category, models]) => {
+            const filteredModels = Object.entries(models).filter(([model]) =>
+                category.toLowerCase().includes(searchTerm) || model.toLowerCase().includes(searchTerm)
+            );
+            return [category, Object.fromEntries(filteredModels)];
+        })
+        .filter(([, models]) => Object.keys(models).length > 0);
+
+    return `
+    <div class="adminContainer">
+        <header class="adminHeader">
+            <h2>系统管理后台</h2>
+            <div class="header-actions-admin">
+                <button id="back-to-quote-btn" class="admin-button">返回报价首页</button>
+            </div>
+        </header>
+        
+        <div class="admin-content">
+            <div class="admin-section">
+                <h3 class="admin-section-header">快速录入配件</h3>
+                <div class="admin-section-body">
+                    <div class="quick-add-form">
+                         <input type="text" id="quick-add-category-input" placeholder="分类" />
+                         <input type="text" id="quick-add-model" placeholder="型号名称" />
+                         <input type="number" id="quick-add-price" placeholder="成本单价" />
+                         <button id="quick-add-btn">确认添加</button>
+                    </div>
+                </div>
+            </div>
+            <div class="admin-section">
+                <h3 class="admin-section-header">现有数据维护</h3>
+                <div class="admin-section-body">
+                    <input type="search" id="admin-search-input" placeholder="输入型号或分类名称搜索..." value="${state.adminSearchTerm}" />
+                    <div id="admin-data-table-container" style="max-height: 400px; overflow-y: auto;">
+                        <table class="admin-data-table">
+                            <thead><tr><th>分类</th><th>型号</th><th>单价</th><th>操作</th></tr></thead>
+                            <tbody>
+                                ${filteredPriceEntries.map(([category, models]) => 
+                                    Object.entries(models).map(([model, price]) => `
+                                        <tr data-category="${category}" data-model="${model}">
+                                            <td>${category}</td>
+                                            <td>${model}</td>
+                                            <td><input type="number" class="price-input" value="${price}" /></td>
+                                            <td>
+                                                <button class="admin-save-item-btn">保存</button>
+                                                <button class="admin-delete-item-btn">删除</button>
+                                            </td>
+                                        </tr>
+                                    `).join('')
+                                ).join('') || `<tr><td colspan="4" style="text-align:center;">未找到匹配项</td></tr>`}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    `;
+}
+
 
 // --- LOGIC & EVENT HANDLERS ---
 function showModal(options: Partial<CustomModalState>) {
@@ -481,6 +559,12 @@ function addEventListeners() {
             }
             state.showCustomModal = false;
             render();
+        } else if (button && button.id === 'app-view-toggle-btn') {
+            state.view = 'admin';
+            render();
+        } else if (button && button.id === 'back-to-quote-btn') {
+            state.view = 'quote';
+            render();
         } else if (button && button.id === 'reset-btn') {
             state.selection = getInitialSelection();
             state.customItems = [];
@@ -507,7 +591,74 @@ function addEventListeners() {
             handleMatchConfig();
         } else if (button && button.id === 'generate-quote-btn') {
             handleExportExcel();
+        } else if (button && button.id === 'quick-add-btn') {
+            const categoryInput = ($('#quick-add-category-input') as HTMLInputElement);
+            const modelInput = ($('#quick-add-model') as HTMLInputElement);
+            const priceInput = ($('#quick-add-price') as HTMLInputElement);
+            
+            const category = categoryInput.value.trim();
+            const model = modelInput.value.trim();
+            const priceStr = priceInput.value.trim();
+            const price = parseFloat(priceStr);
+
+            if (!category) { showModal({ title: '输入错误', message: '请输入分类。' }); return; }
+            if (!model) { showModal({ title: '输入错误', message: '请输入型号名称。' }); return; }
+            if (priceStr === '' || isNaN(price)) { showModal({ title: '输入错误', message: '请输入有效的成本单价。' }); return; }
+
+            const itemExists = state.priceData.prices[category]?.[model] !== undefined;
+
+            const performAddOrUpdate = () => {
+                if (!state.priceData.prices[category]) state.priceData.prices[category] = {};
+                state.priceData.prices[category][model] = price;
+                
+                categoryInput.value = '';
+                modelInput.value = '';
+                priceInput.value = '';
+                categoryInput.focus();
+                render();
+            };
+
+            if (itemExists) {
+                showModal({
+                    title: '确认更新',
+                    message: `配件 "${category} - ${model}" 已存在，是否要将其价格更新为 ${price}？`,
+                    showCancel: true,
+                    confirmText: '更新',
+                    onConfirm: performAddOrUpdate
+                });
+            } else {
+                performAddOrUpdate();
+            }
+        } else if (button && button.classList.contains('admin-save-item-btn') && row) {
+            const { category, model } = row.dataset;
+            const newPrice = parseFloat((row.querySelector('.price-input') as HTMLInputElement).value);
+            if (category && model && !isNaN(newPrice)) {
+                if (state.priceData.prices[category]) {
+                    state.priceData.prices[category][model] = newPrice;
+                    button.style.backgroundColor = '#16a34a';
+                    setTimeout(() => { button.style.backgroundColor = ''; }, 1000);
+                }
+            }
+        } else if (button && button.classList.contains('admin-delete-item-btn') && row) {
+            const { category, model } = row.dataset;
+            if (category && model) {
+                showModal({
+                    title: '确认删除',
+                    message: `确定要删除 "${category} - ${model}" 吗？`,
+                    showCancel: true,
+                    isDanger: true,
+                    confirmText: '删除',
+                    onConfirm: () => {
+                        if(state.priceData.prices[category]) {
+                            delete state.priceData.prices[category][model];
+                            if (Object.keys(state.priceData.prices[category]).length === 0) delete state.priceData.prices[category];
+                            render();
+                        }
+                    }
+                });
+            }
         }
+
     });
 
     appContainer.addEventListener('input', (e) => {
@@ -516,6 +667,28 @@ function addEventListeners() {
         
         if (target.id === 'new-category-input') { state.newCategory = target.value; return; }
         
+        if (target.id === 'admin-search-input') {
+            const searchValue = target.value;
+            const selectionStart = target.selectionStart;
+            const selectionEnd = target.selectionEnd;
+            const scrollContainer = $('#admin-data-table-container');
+            const scrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
+
+            state.adminSearchTerm = searchValue;
+            render();
+
+            const newSearchInput = $('#admin-search-input') as HTMLInputElement;
+            if (newSearchInput) {
+                newSearchInput.focus();
+                newSearchInput.setSelectionRange(selectionStart, selectionEnd);
+            }
+            const newScrollContainer = $('#admin-data-table-container');
+            if (newScrollContainer) {
+                newScrollContainer.scrollTop = scrollTop;
+            }
+            return;
+        }
+
         if (row && row.dataset.category && !row.dataset.model) {
             const category = row.dataset.category;
             if (target.classList.contains('quantity-input')) {
