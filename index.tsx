@@ -20,6 +20,7 @@ interface Profile {
     phone: string;
     role: 'admin' | 'user';
     approved: boolean;
+    email?: string;
 }
 interface LoginLog {
     id: number;
@@ -596,8 +597,7 @@ function renderUserManagement() {
                                 <tr data-user-id="${user.id}">
                                     <td>${user.full_name || 'N/A'}</td>
                                     <td>${user.phone || 'N/A'}</td>
-                                    {/* FIX: Correctly display the user's email from the user object, with a fallback to user ID. The previous logic was incorrectly checking the logged-in admin's email. */}
-                                    <td>${(user as any).email || user.id}</td>
+                                    <td>${user.email || user.id}</td>
                                     <td><span class="status-badge role-${user.role}">${user.role}</span></td>
                                     <td><span class="status-badge ${user.approved ? 'approved' : 'pending'}">${user.approved ? '已批准' : '待审批'}</span></td>
                                     <td class="user-actions">
@@ -931,8 +931,8 @@ async function fetchUsersAndLogs() {
              state.users = usersData;
         } else {
             // This is inefficient but necessary as profiles don't store emails.
-            const emailMap = new Map(authUsers.users.map(u => [u.id, u.email]));
-            state.users = usersData.map((profile: any) => ({...profile, email: emailMap.get(profile.id) || 'N/A' }));
+            const emailMap = new Map(authUsers.users.map((u: {id: string, email?: string}) => [u.id, u.email]));
+            state.users = usersData.map((profile: Profile) => ({...profile, email: emailMap.get(profile.id) || 'N/A' }));
         }
     }
 
