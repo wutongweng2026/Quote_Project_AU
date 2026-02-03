@@ -930,7 +930,25 @@ async function handleAuthAction(e: Event) {
             }});
         }
     } catch (error: any) {
-        state.authError = error.message || '发生未知错误';
+        const message = error.message || '发生未知错误';
+        let translatedMessage = message;
+
+        // Use includes for broader matching, as error messages might have slight variations.
+        if (message.toLowerCase().includes('invalid login credentials')) {
+            translatedMessage = '用户名或密码无效，请重试。';
+        } else if (message.toLowerCase().includes('missing email or phone')) {
+            translatedMessage = '用户名和密码不能为空。';
+        } else if (message.toLowerCase().includes('email not confirmed')) {
+            translatedMessage = '您的邮箱尚未验证，请检查您的收件箱。';
+        } else if (message.toLowerCase().includes('user already registered')) {
+            translatedMessage = '该用户名（邮箱）已被注册。';
+        } else if (message.toLowerCase().includes('password should be at least 6 characters')) {
+            translatedMessage = '密码至少需要6个字符。';
+        } else if (message.toLowerCase().includes('to be a valid email')) {
+            translatedMessage = '请输入有效的邮箱地址。';
+        }
+        
+        state.authError = translatedMessage;
     } finally {
         state.authLoading = false;
         render();
