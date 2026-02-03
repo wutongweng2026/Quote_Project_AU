@@ -1,9 +1,55 @@
+// --- TYPES ---
+interface PriceDataItem { [model: string]: number; }
+interface Prices { [category: string]: PriceDataItem; }
+interface Discount { label: string; rate: number; }
+interface TieredDiscount { id: number; threshold: number; rate: number; }
+interface MarginOption { label: string; value: number; }
+interface PriceData {
+    settings: { margin: number; };
+    marginOptions: MarginOption[];
+    prices: Prices;
+    discounts: Discount[];
+    tieredDiscounts: TieredDiscount[];
+    lastUpdated?: string | null;
+}
+interface SelectionItem { model: string; quantity: number; }
+// FIX: Renamed Selection to SelectionState to avoid conflict with the browser's built-in Selection type.
+interface SelectionState { [category: string]: SelectionItem; }
+interface CustomItem { id: number; category: string; model: string; quantity: number; }
+interface CustomModalState {
+    title: string;
+    message: string;
+    onConfirm: (() => void) | null;
+    confirmText: string;
+    cancelText: string;
+    showCancel: boolean;
+    isDanger: boolean;
+}
+interface AppState {
+    priceData: PriceData | null;
+    loadingError: string | null;
+    isLoggedIn: boolean;
+    view: 'quote' | 'admin';
+    selection: SelectionState;
+    customItems: CustomItem[];
+    newCategory: string;
+    specialDiscount: number;
+    discountRate: number;
+    selectedMargin: number | null;
+    adminSearchTerm: string;
+    pendingFile: File | null;
+    showLoginModal: boolean;
+    loginError: string | null;
+    showCustomModal: boolean;
+    customModal: CustomModalState;
+}
+
 // --- DATA (Embedded) & CONFIG ---
 const CONFIG_ROWS = ['主机', '内存', '硬盘1', '硬盘2', '显卡', '电源', '显示器'];
 declare var XLSX: any;
 
 // --- STATE MANAGEMENT ---
-const getInitialSelection = () => ({
+const getInitialSelection = (): SelectionState => ({
     '主机': { model: '', quantity: 1 },
     '内存': { model: '', quantity: 1 },
     '硬盘1': { model: '', quantity: 1 },
@@ -13,7 +59,7 @@ const getInitialSelection = () => ({
     '显示器': { model: '', quantity: 1 }
 });
 
-const state = {
+const state: AppState = {
     priceData: null, // Will be loaded from JSON
     loadingError: null, // To store loading errors
     isLoggedIn: false,
@@ -47,8 +93,8 @@ function updateTimestamp() {
 }
 
 // --- DOM SELECTORS ---
-const $ = (selector) => document.querySelector(selector);
-const appContainer = $('#app');
+const $ = (selector: string) => document.querySelector(selector);
+const appContainer = $('#app')!;
 
 // --- RENDER FUNCTIONS ---
 function render() {
@@ -118,6 +164,7 @@ function renderCustomModal() {
 }
 
 function renderQuoteTool() {
+    if (!state.priceData) return '';
     const totals = calculateTotals();
     const finalConfigText = getFinalConfigText();
     const lastUpdated = state.priceData.lastUpdated;
@@ -204,7 +251,8 @@ function renderQuoteTool() {
     `;
 }
 
-function renderConfigRow(category) {
+function renderConfigRow(category: string) {
+    if (!state.priceData) return '';
     const dataCategory = category.startsWith('硬盘') ? '硬盘' : category;
     const models = state.priceData.prices[dataCategory] || {};
     const currentSelection = state.selection[category];
@@ -227,7 +275,8 @@ function renderConfigRow(category) {
     `;
 }
 
-function renderCustomItemRow(item) {
+function renderCustomItemRow(item: CustomItem) {
+    if (!state.priceData) return '';
     const models = state.priceData.prices[item.category] || {};
     return `
         <tr data-custom-id="${item.id}">
@@ -264,6 +313,7 @@ function renderAddCategoryRow() {
 }
 
 function renderAdminPanel() {
+    if (!state.priceData) return '';
     const allCategories = Object.keys(state.priceData.prices);
     const searchTerm = (state.adminSearchTerm || '').toLowerCase();
     const filteredPriceEntries = Object.entries(state.priceData.prices)
@@ -380,7 +430,7 @@ function renderAdminPanel() {
 
 
 // --- LOGIC & EVENT HANDLERS ---
-function showModal(options) {
+function showModal(options: Partial<CustomModalState>) {
     state.customModal = {
         title: '提示',
         message: '',
@@ -396,6 +446,8 @@ function showModal(options) {
 }
 
 function calculateTotals() {
+    if (!state.priceData) return { finalPrice: 0 };
+
     const standardCost = Object.entries(state.selection).reduce((acc, [category, { model, quantity }]) => {
         if (model && quantity > 0) {
             const dataCategory = category.startsWith('硬盘') ? '硬盘' : category;
@@ -414,7 +466,7 @@ function calculateTotals() {
     }, 0);
     
     const costTotal = standardCost + customCost;
-    const priceBeforeDiscount = costTotal * state.selectedMargin;
+    const priceBeforeDiscount = costTotal * (state.selectedMargin || 1);
     let finalPrice = priceBeforeDiscount * state.discountRate - state.specialDiscount;
     
     finalPrice = Math.max(0, finalPrice);
@@ -452,6 +504,7 @@ function getFinalConfigText() {
 }
 
 function handleMatchConfig() {
+    if (!state.priceData) return;
     const input = ($('#matcher-input') as HTMLInputElement).value;
     if (!input) return;
 
@@ -528,6 +581,7 @@ function handleMatchConfig() {
 }
 
 function handleExportExcel() {
+    if (!state.priceData) return;
     const totals = calculateTotals();
     let costTotal = 0;
     
@@ -537,7 +591,7 @@ function handleExportExcel() {
 
     const allItems = [
         ...Object.entries(state.selection),
-        ...state.customItems.map(item => [item.category, item])
+        ...state.customItems.map(item => [item.category, item] as [string, CustomItem])
     ];
 
     allItems.forEach(([category, { model, quantity }]) => {
@@ -552,7 +606,7 @@ function handleExportExcel() {
 
     rows.push([]); 
     rows.push(['', '', '', '总成本', costTotal.toString()]);
-    rows.push(['', '', '', '点位', state.selectedMargin.toString()]);
+    rows.push(['', '', '', '点位', String(state.selectedMargin)]);
     rows.push(['', '', '', '折扣', state.discountRate.toString()]);
     rows.push(['', '', '', '特别立减', state.specialDiscount.toString()]);
     rows.push(['', '', '', '最终报价', totals.finalPrice.toString()]);
@@ -581,11 +635,11 @@ function handleFileSelect(event: Event) {
     const target = event.target as HTMLInputElement;
     const file = target.files ? target.files[0] : null;
     if (!file) {
-        ($('#file-name-display') as HTMLElement).textContent = '未选择文件';
+        (document.getElementById('file-name-display') as HTMLElement).textContent = '未选择文件';
         state.pendingFile = null;
         return;
     }
-    ($('#file-name-display') as HTMLElement).textContent = file.name;
+    (document.getElementById('file-name-display') as HTMLElement).textContent = file.name;
     state.pendingFile = file;
 }
 
@@ -606,6 +660,7 @@ function handleLogin() {
 }
 
 function processImportedData(data: any[][]) {
+    if (!state.priceData) return;
     let updatedCount = 0;
     let addedCount = 0;
     let importHappened = false;
@@ -674,15 +729,13 @@ function processImportedData(data: any[][]) {
 
 function addEventListeners() {
     appContainer.addEventListener('click', (e) => {
+        if (!state.priceData) return;
         const target = e.target as HTMLElement;
         if (!target) return;
         
         const button = target.closest('button');
-        // FIX: Cast closest() result to HTMLElement to access dataset property.
         const row = target.closest<HTMLTableRowElement>('tr');
-        // FIX: Cast closest() result to HTMLElement to access dataset property.
         const tierRow = target.closest<HTMLElement>('.tier-row');
-        // FIX: Cast closest() result to HTMLElement to access dataset property.
         const marginRow = target.closest<HTMLElement>('.margin-option-row');
 
         if (target.id === 'modal-overlay' || target.id === 'custom-modal-overlay') {
@@ -786,7 +839,7 @@ function addEventListeners() {
         } else if (button && button.classList.contains('admin-save-item-btn') && row) {
             const { category, model } = row.dataset;
             const newPrice = parseFloat((row.querySelector('.price-input') as HTMLInputElement).value);
-            if (!isNaN(newPrice)) {
+            if (category && model && !isNaN(newPrice)) {
                 state.priceData.prices[category][model] = newPrice;
                 updateTimestamp();
                 button.style.backgroundColor = '#16a34a';
@@ -794,19 +847,23 @@ function addEventListeners() {
             }
         } else if (button && button.classList.contains('admin-delete-item-btn') && row) {
             const { category, model } = row.dataset;
-            showModal({
-                title: '确认删除',
-                message: `确定要删除 "${category} - ${model}" 吗？`,
-                showCancel: true,
-                isDanger: true,
-                confirmText: '删除',
-                onConfirm: () => {
-                    delete state.priceData.prices[category][model];
-                    if (Object.keys(state.priceData.prices[category]).length === 0) delete state.priceData.prices[category];
-                    updateTimestamp();
-                    render();
-                }
-            });
+            if (category && model) {
+                showModal({
+                    title: '确认删除',
+                    message: `确定要删除 "${category} - ${model}" 吗？`,
+                    showCancel: true,
+                    isDanger: true,
+                    confirmText: '删除',
+                    onConfirm: () => {
+                        if(state.priceData) {
+                            delete state.priceData.prices[category][model];
+                            if (Object.keys(state.priceData.prices[category]).length === 0) delete state.priceData.prices[category];
+                            updateTimestamp();
+                            render();
+                        }
+                    }
+                });
+            }
         } else if (button && button.id === 'add-tier-btn') {
             state.priceData.tieredDiscounts.push({ id: Date.now(), threshold: 0, rate: 0 });
             render();
@@ -818,7 +875,7 @@ function addEventListeners() {
             state.priceData.marginOptions.push({ label: '新倍率', value: 1.0 });
             render();
         } else if (button && button.classList.contains('remove-margin-btn') && marginRow) {
-            const index = parseInt(marginRow.dataset.index, 10);
+            const index = parseInt(marginRow.dataset.index!, 10);
             const wasDefault = state.priceData.marginOptions[index].value === state.priceData.settings.margin;
             state.priceData.marginOptions.splice(index, 1);
             if (wasDefault && state.priceData.marginOptions.length > 0) {
@@ -873,10 +930,9 @@ function addEventListeners() {
     });
 
     appContainer.addEventListener('input', (e) => {
+        if (!state.priceData) return;
         const target = e.target as HTMLInputElement;
-        // FIX: Cast closest() result to HTMLElement to access dataset property.
         const row = target.closest<HTMLTableRowElement>('tr');
-        // FIX: Cast closest() result to HTMLElement to access dataset property.
         const tierRow = target.closest<HTMLElement>('.tier-row');
         
         if (target.id === 'new-category-input') { state.newCategory = target.value; return; }
@@ -907,10 +963,9 @@ function addEventListeners() {
     });
     
     appContainer.addEventListener('change', (e) => {
+        if (!state.priceData) return;
         const target = e.target as HTMLInputElement | HTMLSelectElement;
-        // FIX: Cast closest() result to HTMLElement to access dataset property.
         const row = target.closest<HTMLTableRowElement>('tr');
-        // FIX: Cast closest() result to HTMLElement to access dataset property.
         const marginRow = target.closest<HTMLElement>('.margin-option-row');
 
         if (target.id === 'import-file-input') { handleFileSelect(e as unknown as Event); return; }
@@ -918,7 +973,7 @@ function addEventListeners() {
         if (target.classList.contains('margin-default-radio')) {
             state.priceData.settings.margin = Number((target as HTMLInputElement).value);
         } else if (marginRow && (target.classList.contains('margin-label-input') || target.classList.contains('margin-value-input'))) {
-            const index = parseInt(marginRow.dataset.index, 10);
+            const index = parseInt(marginRow.dataset.index!, 10);
             const option = state.priceData.marginOptions[index];
             const oldValue = option.value;
             
@@ -931,7 +986,7 @@ function addEventListeners() {
             }
             render();
         } else if (target.id === 'quick-add-category') {
-            ($('#quick-add-new-category') as HTMLElement).style.display = (target as HTMLSelectElement).value === '--new--' ? 'block' : 'none';
+            (document.getElementById('quick-add-new-category') as HTMLElement).style.display = (target as HTMLSelectElement).value === '--new--' ? 'block' : 'none';
         } else if (row && row.dataset.category) {
             const category = row.dataset.category;
             if (target.classList.contains('model-select')) { state.selection[category].model = (target as HTMLSelectElement).value; render(); }
@@ -946,7 +1001,8 @@ function addEventListeners() {
     });
 
     // Add keydown listener for the modal
-    appContainer.addEventListener('keydown', (e) => {
+    // FIX: Explicitly type `e` as KeyboardEvent to access the `key` property.
+    appContainer.addEventListener('keydown', (e: KeyboardEvent) => {
         if (state.showLoginModal && e.key === 'Enter') {
             e.preventDefault();
             handleLogin();
@@ -970,7 +1026,7 @@ async function initializeApp() {
              throw new Error("Price data is malformed or missing key properties.");
         }
 
-        state.priceData = priceData;
+        state.priceData = priceData as PriceData;
 
         // Initialize state from loaded data, providing defaults if properties are missing
         if (state.priceData.discounts && state.priceData.discounts.length > 0) {
@@ -994,22 +1050,9 @@ async function initializeApp() {
             state.priceData.tieredDiscounts = [];
         }
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Could not load price data, using fallback:", error);
-
-        // Create a complete fallback data structure to allow the app to run.
-        state.priceData = {
-            settings: { margin: 1.15 },
-            marginOptions: [{ label: '标准 (1.15)', value: 1.15 }],
-            prices: {}, // Dropdowns will be empty, which is fine.
-            discounts: [{ label: '无折扣 (1.0)', rate: 1.0 }],
-            tieredDiscounts: [],
-            lastUpdated: null,
-        };
-        
-        // Initialize state from fallback data
-        state.discountRate = 1.0;
-        state.selectedMargin = 1.15;
+        state.loadingError = error.message;
     }
 
     render(); // Render the main UI with either loaded data or fallback data.
