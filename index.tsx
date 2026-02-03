@@ -1,6 +1,8 @@
 
+
 // --- DATA (Embedded) & CONFIG ---
 const CONFIG_ROWS = ['主机', '内存', '硬盘1', '硬盘2', '显卡', '电源', '显示器'];
+declare var XLSX: any;
 
 // --- STATE MANAGEMENT ---
 const getInitialSelection = () => ({
@@ -27,6 +29,16 @@ const state = {
     pendingFile: null,
     showLoginModal: false,
     loginError: null,
+    showCustomModal: false,
+    customModal: {
+        title: '',
+        message: '',
+        onConfirm: null,
+        confirmText: '确定',
+        cancelText: '取消',
+        showCancel: false,
+        isDanger: false,
+    },
 };
 
 function updateTimestamp() {
@@ -56,6 +68,9 @@ function render() {
     if (state.showLoginModal) {
         html += renderLoginModal();
     }
+    if (state.showCustomModal) {
+        html += renderCustomModal();
+    }
 
     appContainer.innerHTML = html;
 }
@@ -76,6 +91,22 @@ function renderLoginModal() {
     `;
 }
 
+function renderCustomModal() {
+    if (!state.showCustomModal) return '';
+    const { title, message, confirmText, cancelText, showCancel, isDanger } = state.customModal;
+    return `
+        <div class="modal-overlay" id="custom-modal-overlay">
+            <div class="modal-content">
+                <h2>${title}</h2>
+                <p>${message}</p>
+                <div class="modal-buttons">
+                    ${showCancel ? `<button class="modal-cancel-btn" id="custom-modal-cancel-btn">${cancelText}</button>` : ''}
+                    <button class="modal-confirm-btn ${isDanger ? 'danger' : ''}" id="custom-modal-confirm-btn">${confirmText}</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
 
 function renderQuoteTool() {
     const totals = calculateTotals();
@@ -87,7 +118,7 @@ function renderQuoteTool() {
     return `
         <div class="quoteContainer">
             <header class="quoteHeader">
-                <h1>产品报价系统 <span>v1.01 -- 龍盛科技</span></h1>
+                <h1>产品报价系统 <span>v1.01 -- 龙盛科技</span></h1>
                 <div class="header-actions">
                     <span class="update-timestamp">${formattedDate}</span>
                     <button class="admin-button" id="app-view-toggle-btn">${state.isLoggedIn ? '后台管理' : '后台登录'}</button>
@@ -237,7 +268,7 @@ function renderAdminPanel() {
     return `
     <div class="adminContainer">
         <header class="adminHeader">
-            <h2>龍盛科技 系统管理后台 V1.01</h2>
+            <h2>龙盛科技 系统管理后台 V1.01</h2>
             <button id="back-to-quote-btn" class="admin-button">返回报价首页</button>
         </header>
 
@@ -297,7 +328,7 @@ function renderAdminPanel() {
                  <div class="import-form">
                     <label for="import-file-input" class="import-file-label">
                         选择文件
-                        <input type="file" id="import-file-input" accept=".txt,.csv" />
+                        <input type="file" id="import-file-input" accept=".txt,.csv,.xlsx,.xls" />
                     </label>
                     <span id="file-name-display">未选择文件</span>
                     <button id="import-btn">执行批量导入</button>
@@ -339,6 +370,21 @@ function renderAdminPanel() {
 
 
 // --- LOGIC & EVENT HANDLERS ---
+function showModal(options) {
+    state.customModal = {
+        title: '提示',
+        message: '',
+        onConfirm: null,
+        confirmText: '确定',
+        cancelText: '取消',
+        showCancel: false,
+        isDanger: false,
+        ...options
+    };
+    state.showCustomModal = true;
+    render();
+}
+
 function calculateTotals() {
     const standardCost = Object.entries(state.selection).reduce((acc, [category, { model, quantity }]) => {
         if (model && quantity > 0) {
@@ -470,7 +516,6 @@ function handleMatchConfig() {
     render();
 }
 
-
 function handleExportExcel() {
     const totals = calculateTotals();
     let costTotal = 0;
@@ -489,15 +534,11 @@ function handleExportExcel() {
             const cost = state.priceData.prices[category]?.[model] ?? 0;
             const subtotal = cost * quantity;
             costTotal += subtotal;
-// FIX: Changed number to string conversion from `String(value)` to `value.toString()`
-// to avoid potential issues with the global `String` object being shadowed.
             rows.push([category, model, cost.toString(), quantity.toString(), subtotal.toString()]);
         }
     });
 
     rows.push([]); 
-// FIX: Changed number to string conversion from `String(value)` to `value.toString()`
-// to avoid potential issues with the global `String` object being shadowed.
     rows.push(['', '', '', '总成本', costTotal.toString()]);
     rows.push(['', '', '', '点位', state.selectedMargin.toString()]);
     rows.push(['', '', '', '折扣', state.discountRate.toString()]);
@@ -523,7 +564,6 @@ function handleExportExcel() {
         document.body.removeChild(link);
     }
 }
-
 
 function handleFileSelect(event) {
     const file = event.target.files[0];
@@ -552,6 +592,69 @@ function handleLogin() {
     }
 }
 
+function processImportedData(data) {
+    let updatedCount = 0;
+    let addedCount = 0;
+    let importHappened = false;
+
+    const headers = ['配件', '分类', '型号', '报价', '单价'];
+    const firstRow = data.length > 0 ? data[0].map(h => String(h).trim()) : [];
+    let startIndex = 0;
+
+    let categoryIndex = -1, modelIndex = -1, priceIndex = -1;
+    
+    if (headers.some(h => firstRow.includes(h))) {
+        startIndex = 1;
+        categoryIndex = firstRow.findIndex(h => h === '配件' || h === '分类');
+        modelIndex = firstRow.findIndex(h => h === '型号');
+        priceIndex = firstRow.findIndex(h => h === '报价' || h === '单价');
+    } else {
+        categoryIndex = 0;
+        modelIndex = 1;
+        priceIndex = 2;
+    }
+
+    if (categoryIndex === -1 || modelIndex === -1 || priceIndex === -1) {
+        showModal({ title: '导入失败', message: '文件缺少必要的列标题 (配件/分类, 型号, 报价/单价)。' });
+        return;
+    }
+
+    for (let i = startIndex; i < data.length; i++) {
+        const row = data[i];
+        if (row && row.length >= 3) {
+            const category = String(row[categoryIndex] || '').trim();
+            const model = String(row[modelIndex] || '').trim();
+            const price = parseFloat(row[priceIndex]);
+
+            if (category && model && !isNaN(price)) {
+                if (!state.priceData.prices[category]) {
+                    state.priceData.prices[category] = {};
+                }
+                if (state.priceData.prices[category][model] === undefined) addedCount++;
+                else updatedCount++;
+                state.priceData.prices[category][model] = price;
+                importHappened = true;
+            }
+        }
+    }
+    
+    if (importHappened) {
+        updateTimestamp();
+    }
+    
+    showModal({
+        title: '导入完成',
+        message: `更新: ${updatedCount} 条\n新增: ${addedCount} 条`,
+    });
+    
+    state.pendingFile = null;
+    const fileInput = ($('#import-file-input'));
+    if(fileInput) fileInput.value = '';
+    const fileNameDisplay = ($('#file-name-display'));
+    if(fileNameDisplay) fileNameDisplay.textContent = '未选择文件';
+    render();
+}
+
 function addEventListeners() {
     appContainer.addEventListener('click', (e) => {
         const target = e.target;
@@ -561,17 +664,29 @@ function addEventListeners() {
         const row = target.closest('tr');
         const tierRow = target.closest('.tier-row');
         const marginRow = target.closest('.margin-option-row');
+        const overlay = target.closest('.modal-overlay');
 
-        if (target.id === 'modal-overlay' || (button && button.id === 'modal-cancel-btn')) {
+        if (overlay && (overlay.id === 'modal-overlay' || overlay.id === 'custom-modal-overlay')) {
              state.showLoginModal = false;
+             state.showCustomModal = false;
              state.loginError = null;
              render();
              return;
         }
 
-        if (!button) return;
-
-        if (button.id === 'app-view-toggle-btn') {
+        if (button && button.id === 'modal-cancel-btn') {
+            state.showLoginModal = false; state.loginError = null; render();
+        } else if(button && button.id === 'custom-modal-cancel-btn') {
+            state.showCustomModal = false; render();
+        } else if (button && button.id === 'custom-modal-confirm-btn') {
+            if (state.customModal.onConfirm) {
+                state.customModal.onConfirm();
+            }
+            state.showCustomModal = false;
+            // No re-render here, onConfirm will handle it if needed
+        } else if (button && button.id === 'modal-confirm-btn') {
+            handleLogin();
+        } else if (button && button.id === 'app-view-toggle-btn') {
             if (state.isLoggedIn) {
                 state.view = 'admin';
                 render();
@@ -579,11 +694,9 @@ function addEventListeners() {
                 state.showLoginModal = true;
                 render();
             }
-        } else if (button.id === 'modal-confirm-btn') {
-            handleLogin();
-        } else if (button.id === 'back-to-quote-btn') {
+        } else if (button && button.id === 'back-to-quote-btn') {
             state.view = 'quote'; render();
-        } else if (button.id === 'reset-btn') {
+        } else if (button && button.id === 'reset-btn') {
             state.selection = getInitialSelection();
             state.customItems = [];
             state.newCategory = '';
@@ -591,11 +704,11 @@ function addEventListeners() {
             state.discountRate = 1.0;
             state.selectedMargin = state.priceData.settings.margin;
             render();
-        } else if (button.classList.contains('remove-item-btn') && row) {
+        } else if (button && button.classList.contains('remove-item-btn') && row) {
             const category = row.dataset.category;
             if(category) state.selection[category] = getInitialSelection()[category];
             render();
-        } else if (button.id === 'add-category-btn') {
+        } else if (button && button.id === 'add-category-btn') {
             if (state.newCategory.trim()) {
                 const newCat = state.newCategory.trim();
                  if (!state.customItems.some(item => item.category === newCat)) {
@@ -603,14 +716,14 @@ function addEventListeners() {
                 }
                 state.newCategory = ''; render();
             }
-        } else if (button.classList.contains('remove-custom-item-btn') && row) {
+        } else if (button && button.classList.contains('remove-custom-item-btn') && row) {
             state.customItems = state.customItems.filter(item => item.id !== Number(row.dataset.customId));
             render();
-        } else if (button.id === 'match-config-btn') {
+        } else if (button && button.id === 'match-config-btn') {
             handleMatchConfig();
-        } else if (button.id === 'generate-quote-btn') {
+        } else if (button && button.id === 'generate-quote-btn') {
             handleExportExcel();
-        } else if (button.id === 'export-all-prices-btn') {
+        } else if (button && button.id === 'export-all-prices-btn') {
             const rows = [['分类', '型号', '单价']];
             const sortedCategories = Object.keys(state.priceData.prices).sort();
             for (const category of sortedCategories) {
@@ -638,7 +751,7 @@ function addEventListeners() {
                 link.click();
                 document.body.removeChild(link);
             }
-        } else if (button.id === 'quick-add-btn') {
+        } else if (button && button.id === 'quick-add-btn') {
             let category = $('#quick-add-category').value;
             if (category === '--new--') category = $('#quick-add-new-category').value.trim();
             const model = $('#quick-add-model').value.trim();
@@ -648,8 +761,10 @@ function addEventListeners() {
                 state.priceData.prices[category][model] = price;
                 updateTimestamp();
                 render();
-            } else { alert('请确保分类、型号和价格都已正确填写。'); }
-        } else if (button.classList.contains('admin-save-item-btn') && row) {
+            } else { 
+                showModal({ title: '输入错误', message: '请确保分类、型号和价格都已正确填写。' });
+            }
+        } else if (button && button.classList.contains('admin-save-item-btn') && row) {
             const { category, model } = row.dataset;
             const newPrice = parseFloat(row.querySelector('.price-input').value);
             if (!isNaN(newPrice)) {
@@ -658,25 +773,32 @@ function addEventListeners() {
                 button.style.backgroundColor = '#16a34a';
                 setTimeout(() => { button.style.backgroundColor = ''; }, 1000);
             }
-        } else if (button.classList.contains('admin-delete-item-btn') && row) {
+        } else if (button && button.classList.contains('admin-delete-item-btn') && row) {
             const { category, model } = row.dataset;
-            if (confirm(`确定要删除 "${category} - ${model}" 吗？`)) {
-                delete state.priceData.prices[category][model];
-                if (Object.keys(state.priceData.prices[category]).length === 0) delete state.priceData.prices[category];
-                updateTimestamp();
-                render();
-            }
-        } else if (button.id === 'add-tier-btn') {
+            showModal({
+                title: '确认删除',
+                message: `确定要删除 "${category} - ${model}" 吗？`,
+                showCancel: true,
+                isDanger: true,
+                confirmText: '删除',
+                onConfirm: () => {
+                    delete state.priceData.prices[category][model];
+                    if (Object.keys(state.priceData.prices[category]).length === 0) delete state.priceData.prices[category];
+                    updateTimestamp();
+                    render();
+                }
+            });
+        } else if (button && button.id === 'add-tier-btn') {
             state.priceData.tieredDiscounts.push({ id: Date.now(), threshold: 0, rate: 0 });
             render();
-        } else if (button.classList.contains('remove-tier-btn') && tierRow) {
+        } else if (button && button.classList.contains('remove-tier-btn') && tierRow) {
             const tierId = Number(tierRow.dataset.tierId);
             state.priceData.tieredDiscounts = state.priceData.tieredDiscounts.filter(t => t.id !== tierId);
             render();
-        } else if (button.id === 'add-margin-btn') {
+        } else if (button && button.id === 'add-margin-btn') {
             state.priceData.marginOptions.push({ label: '新倍率', value: 1.0 });
             render();
-        } else if (button.classList.contains('remove-margin-btn') && marginRow) {
+        } else if (button && button.classList.contains('remove-margin-btn') && marginRow) {
             const index = parseInt(marginRow.dataset.index, 10);
             const wasDefault = state.priceData.marginOptions[index].value === state.priceData.settings.margin;
             state.priceData.marginOptions.splice(index, 1);
@@ -686,48 +808,48 @@ function addEventListeners() {
                 state.priceData.settings.margin = 1.0;
             }
             render();
-        } else if (button.id === 'save-params-btn') {
-            alert('参数已在输入时自动保存，可直接下载全部配置。');
-        } else if (button.id === 'import-btn') {
+        } else if (button && button.id === 'save-params-btn') {
+            showModal({ title: '提示', message: '参数已在输入时自动保存，\n可直接通过最下方的绿色按钮导出全部价格。' });
+        } else if (button && button.id === 'import-btn') {
             if (state.pendingFile) {
+                const file = state.pendingFile;
                 const reader = new FileReader();
-                reader.onload = (e) => {
-                    const text = e.target.result;
-                    if (typeof text !== 'string') {
-                        alert('文件读取失败，内容格式不正确。');
-                        return;
-                    }
-                    const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
-                    let updatedCount = 0;
-                    let addedCount = 0;
-                    let importHappened = false;
-                    lines.forEach(line => {
-                        const parts = line.split(/[,，\t]/).map(p => p.trim());
-                        if (parts.length === 3) {
-                            const [category, model, priceStr] = parts;
-                            const price = parseFloat(priceStr);
-                            if (category && model && !isNaN(price)) {
-                                if (!state.priceData.prices[category]) {
-                                    state.priceData.prices[category] = {};
-                                }
-                                if (!state.priceData.prices[category][model]) addedCount++;
-                                else updatedCount++;
-                                state.priceData.prices[category][model] = price;
-                                importHappened = true;
-                            }
-                        }
-                    });
+                const fileName = file.name.toLowerCase();
 
-                    if (importHappened) {
-                        updateTimestamp();
-                    }
-                    alert(`导入完成！\n更新: ${updatedCount} 条\n新增: ${addedCount} 条`);
-                    state.pendingFile = null;
-                    render();
-                };
-                reader.readAsText(state.pendingFile);
+                if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+                    reader.onload = (e) => {
+                        try {
+                            // FIX: Add a type guard to ensure e.target.result is an ArrayBuffer, resolving a TypeScript error.
+                            if (e.target.result instanceof ArrayBuffer) {
+                                const data = new Uint8Array(e.target.result);
+                                const workbook = XLSX.read(data, { type: 'array' });
+                                const firstSheetName = workbook.SheetNames[0];
+                                const worksheet = workbook.Sheets[firstSheetName];
+                                const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                                processImportedData(json);
+                            } else {
+                                throw new Error('File data is not in the expected ArrayBuffer format.');
+                            }
+                        } catch (err) {
+                             showModal({ title: '导入失败', message: '无法解析Excel文件，请确保文件格式正确。' });
+                        }
+                    };
+                    reader.readAsArrayBuffer(file);
+                } else {
+                    reader.onload = (e) => {
+                        const text = e.target.result;
+                        if (typeof text !== 'string') {
+                            showModal({ title: '导入失败', message: '文件读取失败，内容格式不正确。' });
+                            return;
+                        }
+                        const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+                        const dataAsArrays = lines.map(line => line.split(/[,，\t]/).map(p => p.trim()));
+                        processImportedData(dataAsArrays);
+                    };
+                    reader.readAsText(state.pendingFile);
+                }
             } else {
-                alert('请先选择一个文件。');
+                showModal({ title: '提示', message: '请先选择一个文件。' });
             }
         }
     });

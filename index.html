@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         :root {
             --primary-color: #22c55e; /* Green */
@@ -256,7 +257,7 @@
         #import-file-input { display: none; }
         #file-name-display { color: var(--secondary-text-color); font-size: 0.9rem; }
 
-        /* --- Login Modal --- */
+        /* --- Modals --- */
         .modal-overlay {
             position: fixed;
             top: 0;
@@ -283,6 +284,14 @@
             margin-top: 0;
             margin-bottom: 1.5rem;
             color: var(--text-color);
+        }
+        .modal-content p {
+            margin: 0 auto 1.5rem;
+            color: var(--secondary-text-color);
+            line-height: 1.6;
+            font-size: 1rem;
+            max-width: 95%;
+            white-space: pre-wrap;
         }
         .modal-input {
             width: 100%;
@@ -312,6 +321,12 @@
         .modal-confirm-btn {
             background-color: var(--primary-color);
             color: white;
+        }
+        .modal-confirm-btn.danger {
+            background-color: var(--error-color);
+        }
+        .modal-confirm-btn.danger:hover {
+            background-color: #dc2626;
         }
         .modal-confirm-btn:hover {
             background-color: var(--primary-color-hover);
