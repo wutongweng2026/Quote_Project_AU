@@ -870,23 +870,26 @@ function handleFileSelect(event: Event) {
 
 async function handleAuthAction(e: Event) {
     e.preventDefault();
+
+    const emailInput = ($('#email') as HTMLInputElement);
+    const passwordInput = ($('#password') as HTMLInputElement);
+    const identifier = emailInput.value.trim();
+    const password = passwordInput.value.trim();
+    
+    // Perform validation before setting loading state
+    if (state.loginView === 'signIn' && (!identifier || !password)) {
+        state.authError = '用户名和密码不能为空。';
+        render();
+        return;
+    }
+
     state.authLoading = true;
     state.authError = null;
     render();
 
-    const emailInput = ($('#email') as HTMLInputElement);
-    const passwordInput = ($('#password') as HTMLInputElement);
-    const identifier = emailInput.value;
-    const password = passwordInput.value;
-
     try {
-        if (!identifier || !password) {
-            throw new Error("missing email or phone");
-        }
-        
         if (state.loginView === 'signIn') {
             if (identifier.toLowerCase() === 'admin' && password === 'admin!admin') {
-                // Special admin login. This requires a user with the specified email to exist in Supabase Auth.
                 const { data, error } = await supabaseClient.auth.signInWithPassword({
                     email: 'admin@system.local',
                     password: 'admin!admin'
@@ -899,7 +902,6 @@ async function handleAuthAction(e: Event) {
                     if (logError) console.error('Failed to log login event:', logError.message);
                 }
             } else {
-                 // Regular login using the identifier as an email
                 const { data, error } = await supabaseClient.auth.signInWithPassword({ email: identifier, password });
                 
                 if (error) throw error;
@@ -914,11 +916,16 @@ async function handleAuthAction(e: Event) {
             const phoneInput = ($('#phone') as HTMLInputElement);
             const full_name = fullNameInput.value.trim();
             const phone = phoneInput.value.trim();
+
             if (!full_name || !phone) {
                 throw new Error("姓名和手机号不能为空");
             }
+            if (!identifier || !password) {
+                 throw new Error("邮箱和密码不能为空");
+            }
+
             const { error } = await supabaseClient.auth.signUp({ 
-                email: identifier, // The identifier from the form is the email for sign-up
+                email: identifier,
                 password,
                 options: {
                     data: {
@@ -937,10 +944,9 @@ async function handleAuthAction(e: Event) {
         const message = error.message || '发生未知错误';
         let translatedMessage = message;
 
-        // Use includes for broader matching, as error messages might have slight variations.
         if (message.toLowerCase().includes('invalid login credentials')) {
             translatedMessage = '用户名或密码无效，请重试。';
-        } else if (message.toLowerCase().includes('missing email or phone')) {
+        } else if (message.toLowerCase().includes('missing email or phone') || message.toLowerCase().includes('邮箱和密码不能为空')) {
             translatedMessage = '用户名和密码不能为空。';
         } else if (message.toLowerCase().includes('email not confirmed')) {
             translatedMessage = '您的邮箱尚未验证，请检查您的收件箱。';
