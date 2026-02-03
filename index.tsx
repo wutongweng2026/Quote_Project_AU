@@ -1,12 +1,12 @@
 
 // --- DATA (Embedded) & CONFIG ---
-const CONFIG_ROWS = ['主机', '内存', '硬盘', '硬盘2', '显卡', '电源', '显示器'];
+const CONFIG_ROWS = ['主机', '内存', '硬盘1', '硬盘2', '显卡', '电源', '显示器'];
 
 // --- STATE MANAGEMENT ---
 const getInitialSelection = () => ({
     '主机': { model: '', quantity: 1 },
     '内存': { model: '', quantity: 1 },
-    '硬盘': { model: '', quantity: 1 },
+    '硬盘1': { model: '', quantity: 1 },
     '硬盘2': { model: '', quantity: 0 },
     '显卡': { model: '', quantity: 1 },
     '电源': { model: '', quantity: 1 },
@@ -426,7 +426,7 @@ function handleMatchConfig() {
             const model2 = hddModels.find(m => part2Str.toLowerCase().replace(/\s/g, '').includes(m.normalizedModel));
 
             if (model1) {
-                newSelection['硬盘'].model = model1.model;
+                newSelection['硬盘1'].model = model1.model;
             }
             if (model2) {
                 newSelection['硬盘2'].model = model2.model;
@@ -437,7 +437,7 @@ function handleMatchConfig() {
 
     // 3. Main loop for all other components
     let tempInput = processedInput.toLowerCase();
-    const hddFillOrder = ['硬盘', '硬盘2'];
+    const hddFillOrder = ['硬盘1', '硬盘2'];
 
     for (const { model, category, normalizedModel } of allModels) {
         if (tempInput.replace(/\s/g, '').includes(normalizedModel)) {
