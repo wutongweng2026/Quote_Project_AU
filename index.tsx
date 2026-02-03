@@ -13,7 +13,8 @@ const priceData = {
     "电源": { "300W": 0, "500W": 200 },
     "主机": { "TSK-C3 I5-13400": 2800, "TSK-C3 I5-14400": 3100, "TSK-C3 I5-14500": 3200, "TSK-C3 I7-13700": 4550, "TSK-C3 I7-14700": 5450, "TSK-C3 I9-14900": 5550, "TSK-C4 Ultra5-235": 3300, "TSK-C4 Ultra7-265": 4550 }
   },
-  "discounts": [{ "label": "无折扣 (1.0)", "rate": 1.0 }, { "label": "批量折扣 (0.99)", "rate": 0.99 }]
+  "discounts": [{ "label": "无折扣 (1.0)", "rate": 1.0 }, { "label": "批量折扣 (0.99)", "rate": 0.99 }],
+  "tieredDiscounts": []
 };
 
 // --- STATE MANAGEMENT ---
@@ -37,6 +38,7 @@ const state = {
     specialDiscount: 0,
     discountRate: 1.0,
     adminSearchTerm: '',
+    pendingFile: null,
 };
 
 // --- DOM SELECTORS ---
@@ -210,15 +212,29 @@ function renderAdminPanel() {
         <div class="admin-section">
             <h3 class="admin-section-header">1. 核心计算参数与折扣</h3>
             <div class="admin-section-body">
-                <div class="adminForm">
+                <div class="adminForm" style="margin-bottom: 1.5rem;">
                    <label>预留加价倍率:</label>
-                   <input type="number" step="0.01" value="${state.priceData.settings.margin}" data-path="settings.margin" class="admin-margin-input" />
+                   <input type="number" step="0.01" value="${state.priceData.settings.margin}" class="admin-margin-input" />
                 </div>
+                <div class="tiered-discount-section">
+                    <label style="display: block; font-weight: 500; margin-bottom: 0.5rem;">N件N折阶梯价设置:</label>
+                    <div id="tier-list">
+                    ${(state.priceData.tieredDiscounts || []).map(tier => `
+                        <div class="tier-row" data-tier-id="${tier.id}">
+                            <span>满</span> <input type="number" class="tier-threshold" value="${tier.threshold}" placeholder="数量" /> <span>件, 打</span>
+                            <input type="number" class="tier-rate" step="0.01" value="${tier.rate}" placeholder="折扣" /> <span>折</span>
+                            <button class="remove-tier-btn">删除</button>
+                        </div>
+                    `).join('')}
+                    </div>
+                    <button id="add-tier-btn" class="add-tier-btn">+ 添加阶梯</button>
+                </div>
+                 <button id="save-params-btn" class="admin-save-section-btn">保存倍率与阶梯折扣</button>
             </div>
         </div>
 
         <div class="admin-section">
-            <h3 class="admin-section-header">2. 快速录入配件</h3>
+            <h3 class="admin-section-header" style="background-color: #3b82f6;">2. 快速录入配件</h3>
             <div class="admin-section-body">
                 <div class="quick-add-form">
                      <select id="quick-add-category">
@@ -234,17 +250,21 @@ function renderAdminPanel() {
         </div>
 
         <div class="admin-section">
-             <h3 class="admin-section-header">3. 导入配件 (Excel/Txt)</h3>
+             <h3 class="admin-section-header" style="background-color: #16a34a;">3. 导入配件 (Excel/Txt)</h3>
              <div class="admin-section-body">
                  <div class="import-form">
-                    <input type="file" id="import-file-input" accept=".txt,.csv" />
+                    <label for="import-file-input" class="import-file-label">
+                        选择文件
+                        <input type="file" id="import-file-input" accept=".txt,.csv" />
+                    </label>
+                    <span id="file-name-display">未选择文件</span>
                     <button id="import-btn">执行批量导入</button>
                  </div>
              </div>
         </div>
         
         <div class="admin-section">
-            <h3 class="admin-section-header">4. 现有数据维护</h3>
+            <h3 class="admin-section-header" style="background-color: #6b7280;">4. 现有数据维护</h3>
             <div class="admin-section-body">
                 <input type="search" id="admin-search-input" placeholder="输入型号或分类名称搜索..." value="${state.adminSearchTerm}" />
                 <div style="max-height: 400px; overflow-y: auto;">
@@ -270,7 +290,7 @@ function renderAdminPanel() {
             </div>
         </div>
 
-        <button id="save-config-btn" class="generate-btn" style="width: 100%; padding: 0.8rem; margin-top: 1rem;">保存配置并下载</button>
+        <button id="save-config-btn" class="generate-btn" style="width: 100%; padding: 0.8rem; margin-top: 1rem;">保存全部配置并下载</button>
     </div>
     `;
 }
@@ -380,49 +400,24 @@ function handleGenerateQuoteText() {
     alert("报价单已复制到剪贴板！");
 }
 
-function handleFileImport(event) {
+function handleFileSelect(event) {
     const file = event.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        const text = e.target.result;
-        // FIX: The result of FileReader can be a string or an ArrayBuffer. Add a type check to ensure it's a string before calling .split().
-        if (typeof text === 'string') {
-            const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
-            let updatedCount = 0;
-            let addedCount = 0;
-            lines.forEach(line => {
-                const parts = line.split(/[,，\t]/).map(p => p.trim());
-                if (parts.length === 3) {
-                    const [category, model, priceStr] = parts;
-                    const price = parseFloat(priceStr);
-                    if (category && model && !isNaN(price)) {
-                        if (!state.priceData.prices[category]) {
-                            state.priceData.prices[category] = {};
-                        }
-                        if (!state.priceData.prices[category][model]) addedCount++;
-                        else updatedCount++;
-                        state.priceData.prices[category][model] = price;
-                    }
-                }
-            });
-            alert(`导入完成！\n更新: ${updatedCount} 条\n新增: ${addedCount} 条`);
-            render();
-        } else {
-            alert('文件读取失败，内容格式不正确。');
-        }
-    };
-    reader.readAsText(file);
+    if (!file) {
+        $('#file-name-display').textContent = '未选择文件';
+        state.pendingFile = null;
+        return;
+    }
+    $('#file-name-display').textContent = file.name;
+    state.pendingFile = file;
 }
 
 function addEventListeners() {
-    // General navigation and quote tool listeners
     appContainer.addEventListener('click', (e) => {
         const target = e.target.closest('button');
         if (!target) return;
 
         const row = target.closest('tr');
+        const tierRow = target.closest('.tier-row');
 
         if (target.id === 'admin-login-btn') {
             if (state.isLoggedIn) { state.view = 'admin'; render(); } 
@@ -448,19 +443,12 @@ function addEventListeners() {
             if (state.newCategory.trim()) {
                 const newCat = state.newCategory.trim();
                  if (!state.customItems.some(item => item.category === newCat)) {
-                    state.customItems.push({
-                        id: Date.now(),
-                        category: newCat,
-                        model: '',
-                        quantity: 1
-                    });
+                    state.customItems.push({ id: Date.now(), category: newCat, model: '', quantity: 1 });
                 }
-                state.newCategory = '';
-                render();
+                state.newCategory = ''; render();
             }
         } else if (target.classList.contains('remove-custom-item-btn') && row) {
-            const id = Number(row.dataset.customId);
-            state.customItems = state.customItems.filter(item => item.id !== id);
+            state.customItems = state.customItems.filter(item => item.id !== Number(row.dataset.customId));
             render();
         } else if (target.id === 'match-config-btn') {
             handleMatchConfig();
@@ -471,101 +459,127 @@ function addEventListeners() {
             const blob = new Blob([dataStr], {type: "application/json"});
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url;
-            a.download = 'prices_data.json';
-            a.click();
+            a.href = url; a.download = 'prices_data.json'; a.click();
             URL.revokeObjectURL(url);
         } else if (target.id === 'quick-add-btn') {
             let category = $('#quick-add-category').value;
-            if (category === '--new--') {
-                category = $('#quick-add-new-category').value.trim();
-            }
+            if (category === '--new--') category = $('#quick-add-new-category').value.trim();
             const model = $('#quick-add-model').value.trim();
             const price = parseFloat($('#quick-add-price').value);
             if (category && model && !isNaN(price)) {
-                if (!state.priceData.prices[category]) {
-                    state.priceData.prices[category] = {};
-                }
+                if (!state.priceData.prices[category]) state.priceData.prices[category] = {};
                 state.priceData.prices[category][model] = price;
                 render();
-            } else {
-                alert('请确保分类、型号和价格都已正确填写。');
-            }
+            } else { alert('请确保分类、型号和价格都已正确填写。'); }
         } else if (target.classList.contains('admin-save-item-btn') && row) {
             const { category, model } = row.dataset;
             const newPrice = parseFloat(row.querySelector('.price-input').value);
             if (!isNaN(newPrice)) {
                 state.priceData.prices[category][model] = newPrice;
-                target.style.backgroundColor = '#16a34a'; // Visual feedback
+                target.style.backgroundColor = '#16a34a';
                 setTimeout(() => { target.style.backgroundColor = ''; }, 1000);
             }
         } else if (target.classList.contains('admin-delete-item-btn') && row) {
             const { category, model } = row.dataset;
             if (confirm(`确定要删除 "${category} - ${model}" 吗？`)) {
                 delete state.priceData.prices[category][model];
-                if (Object.keys(state.priceData.prices[category]).length === 0) {
-                    delete state.priceData.prices[category];
-                }
+                if (Object.keys(state.priceData.prices[category]).length === 0) delete state.priceData.prices[category];
                 render();
+            }
+        } else if (target.id === 'add-tier-btn') {
+            state.priceData.tieredDiscounts.push({ id: Date.now(), threshold: 0, rate: 0 });
+            render();
+        } else if (target.classList.contains('remove-tier-btn') && tierRow) {
+            const tierId = Number(tierRow.dataset.tierId);
+            state.priceData.tieredDiscounts = state.priceData.tieredDiscounts.filter(t => t.id !== tierId);
+            render();
+        } else if (target.id === 'save-params-btn') {
+            alert('参数已在输入时自动保存，可直接下载全部配置。');
+        } else if (target.id === 'import-btn') {
+            if (state.pendingFile) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const text = e.target.result;
+                    if (typeof text !== 'string') {
+                        alert('文件读取失败，内容格式不正确。');
+                        return;
+                    }
+                    const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+                    let updatedCount = 0;
+                    let addedCount = 0;
+                    lines.forEach(line => {
+                        const parts = line.split(/[,，\t]/).map(p => p.trim());
+                        if (parts.length === 3) {
+                            const [category, model, priceStr] = parts;
+                            const price = parseFloat(priceStr);
+                            if (category && model && !isNaN(price)) {
+                                if (!state.priceData.prices[category]) {
+                                    state.priceData.prices[category] = {};
+                                }
+                                if (!state.priceData.prices[category][model]) addedCount++;
+                                else updatedCount++;
+                                state.priceData.prices[category][model] = price;
+                            }
+                        }
+                    });
+                    alert(`导入完成！\n更新: ${updatedCount} 条\n新增: ${addedCount} 条`);
+                    state.pendingFile = null;
+                    render();
+                };
+                reader.readAsText(state.pendingFile);
+            } else {
+                alert('请先选择一个文件。');
             }
         }
     });
 
     appContainer.addEventListener('input', (e) => {
         const { target } = e;
-        if (target.id === 'new-category-input') {
-            state.newCategory = target.value; return;
-        } else if (target.id === 'admin-search-input') {
-            state.adminSearchTerm = target.value; render(); return;
-        }
-
         const row = target.closest('tr');
-        if (!row) {
-            if (target.id === 'special-discount-input') {
-                state.specialDiscount = Math.max(0, Number(target.value)); render();
-            } else if (target.matches('.admin-margin-input')) {
-                state.priceData.settings.margin = Number(target.value);
-            }
+        const tierRow = target.closest('.tier-row');
+
+        if (target.id === 'new-category-input') { state.newCategory = target.value; return; }
+        if (target.id === 'admin-search-input') { state.adminSearchTerm = target.value; render(); return; }
+        if (target.matches('.admin-margin-input')) { state.priceData.settings.margin = Number(target.value); return; }
+
+        if (tierRow) {
+            const tierId = Number(tierRow.dataset.tierId);
+            const tier = state.priceData.tieredDiscounts.find(t => t.id === tierId);
+            if (!tier) return;
+            if (target.classList.contains('tier-threshold')) tier.threshold = Number(target.value);
+            if (target.classList.contains('tier-rate')) tier.rate = Number(target.value);
             return;
         }
 
-        if (row.dataset.category && !row.dataset.model) { // Standard item
+        if (row && row.dataset.category && !row.dataset.model) {
             const category = row.dataset.category;
             if (target.classList.contains('quantity-input')) {
                 state.selection[category].quantity = Math.max(0, parseInt(target.value, 10) || 0); render();
             }
-        } else if (row.dataset.customId) { // Custom item on quote page
-            const id = Number(row.dataset.customId);
-            const item = state.customItems.find(i => i.id === id);
-            if (!item) return;
-            if (target.classList.contains('custom-quantity-input')) {
-                item.quantity = Math.max(0, parseInt(target.value, 10) || 0);
-                render();
+        } else if (row && row.dataset.customId) {
+            const item = state.customItems.find(i => i.id === Number(row.dataset.customId));
+            if (item && target.classList.contains('custom-quantity-input')) {
+                item.quantity = Math.max(0, parseInt(target.value, 10) || 0); render();
             }
+        } else if (target.id === 'special-discount-input') {
+            state.specialDiscount = Math.max(0, Number(target.value)); render();
         }
     });
     
     appContainer.addEventListener('change', (e) => {
         const { target } = e;
-        if (target.id === 'import-file-input') {
-             handleFileImport(e); return;
-        } else if (target.id === 'quick-add-category') {
-            $('#quick-add-new-category').style.display = target.value === '--new--' ? 'block' : 'none';
-        }
-        
         const row = target.closest('tr');
-        if (row && row.dataset.category) {
+
+        if (target.id === 'import-file-input') { handleFileSelect(e); return; }
+        
+        if (target.id === 'quick-add-category') {
+            $('#quick-add-new-category').style.display = target.value === '--new--' ? 'block' : 'none';
+        } else if (row && row.dataset.category) {
             const category = row.dataset.category;
-            if (target.classList.contains('model-select')) {
-                state.selection[category].model = target.value; render();
-            }
+            if (target.classList.contains('model-select')) { state.selection[category].model = target.value; render(); }
         } else if (row && row.dataset.customId) {
-            const id = Number(row.dataset.customId);
-            const item = state.customItems.find(i => i.id === id);
-            if (item && target.classList.contains('custom-model-select')) {
-                item.model = target.value;
-                render();
-            }
+            const item = state.customItems.find(i => i.id === Number(row.dataset.customId));
+            if (item && target.classList.contains('custom-model-select')) { item.model = target.value; render(); }
         } else if (target.id === 'discount-select') {
             state.discountRate = Number(target.value); render();
         }
