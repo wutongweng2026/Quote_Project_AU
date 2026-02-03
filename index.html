@@ -69,6 +69,10 @@
         .config-table td:first-child {
             text-align: center;
         }
+        .config-table th:nth-child(3),
+        .config-table th:nth-child(4) {
+            text-align: center;
+        }
         .config-table td { padding: 0 0.5rem; vertical-align: middle; }
         .config-row-label { font-weight: 500; }
         .config-row-action button {
@@ -146,14 +150,70 @@
         }
         input[type=number] { text-align: center; }
 
-        /* Admin Panel styles for consistency */
-        .adminContainer { padding: 1.5rem; animation: fadeIn 0.3s; }
-        .adminHeader { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-        .adminHeader h2 { margin: 0; }
-        .admin-section { background: var(--card-background); border: 1px solid var(--border-color); border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; }
-        .adminGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
-        .adminForm { display: flex; flex-direction: column; gap: 0.5rem; }
-        .adminForm label { font-size: 0.9rem; color: var(--secondary-text-color); }
+        /* --- Admin Panel --- */
+        .adminContainer { padding: 1.5rem; animation: fadeIn 0.3s; background-color: #f9fafb; }
+        .adminHeader {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid var(--primary-color);
+        }
+        .adminHeader h2 { margin: 0; font-size: 1.5rem; color: var(--text-color); }
+        .admin-section {
+            background: var(--card-background);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            overflow: hidden;
+        }
+        .admin-section-header {
+            margin: 0;
+            padding: 0.8rem 1.2rem;
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: white;
+            background-color: var(--secondary-color);
+        }
+        .admin-section-body { padding: 1.2rem; }
+        .adminForm { display: flex; align-items: center; gap: 1rem; }
+        .adminForm label { font-weight: 500; white-space: nowrap; }
+        .admin-margin-input { max-width: 150px; }
+        .quick-add-form, .import-form { display: flex; gap: 0.75rem; align-items: center; }
+        .quick-add-form > *, .import-form > * { flex-shrink: 0; }
+        .quick-add-form select { flex-grow: 1; }
+        .quick-add-form input { flex-grow: 2; }
+        #admin-search-input { margin-bottom: 1rem; }
+        .admin-data-table { width: 100%; border-collapse: collapse; }
+        .admin-data-table th, .admin-data-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .admin-data-table th { font-weight: 500; color: var(--secondary-text-color); }
+        .admin-data-table td { vertical-align: middle; }
+        .admin-data-table .price-input { padding: 0.4rem; }
+        .admin-data-table button {
+            font-size: 0.8rem;
+            padding: 0.3rem 0.6rem;
+            border: none;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        .admin-data-table button:hover { opacity: 0.8; }
+        .admin-save-item-btn { background-color: var(--primary-color); }
+        .admin-delete-item-btn { background-color: var(--error-color); margin-left: 0.5rem; }
+        .quick-add-form button, .import-form button {
+            background-color: var(--secondary-color);
+            border: none;
+            color: white;
+            padding: 0.6rem 1.2rem;
+            border-radius: 6px;
+            cursor: pointer;
+        }
 
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(-10px); }

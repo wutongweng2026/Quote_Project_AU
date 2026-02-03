@@ -27,17 +27,16 @@ const getInitialSelection = () => ({
     '显示器': { model: '', quantity: 1 }
 });
 
-const getInitialNewCustomItem = () => ({ category: '', model: '', quantity: 1 });
-
 const state = {
-    priceData: priceData,
+    priceData: JSON.parse(JSON.stringify(priceData)), // Deep copy for mutable state
     isLoggedIn: false,
     view: 'quote', // 'quote' or 'admin'
     selection: getInitialSelection(),
     customItems: [],
-    newCustomItem: getInitialNewCustomItem(),
+    newCategory: '',
     specialDiscount: 0,
     discountRate: 1.0,
+    adminSearchTerm: '',
 };
 
 // --- DOM SELECTORS ---
@@ -58,14 +57,7 @@ function render() {
 
 function renderQuoteTool() {
     const totals = calculateTotals();
-    const finalConfigText = [
-        ...Object.entries(state.selection)
-            .filter(([_, { model, quantity }]) => model && quantity > 0)
-            .map(([category, { model, quantity }]) => `${category}: ${model} * ${quantity}`),
-        ...state.customItems
-            .filter(item => item.model && item.quantity > 0)
-            .map(item => `${item.category || '自定义'}: ${item.model} (成本: ${item.cost}) * ${item.quantity}`)
-    ].join('\n');
+    const finalConfigText = getFinalConfigText();
 
     return `
         <div class="quoteContainer">
@@ -92,7 +84,7 @@ function renderQuoteTool() {
                     </colgroup>
                     <thead>
                         <tr>
-                            <th class="config-table-label-header">配置清单</th>
+                            <th>配置清单</th>
                             <th>规格型号</th>
                             <th>数量</th>
                             <th>操作</th>
@@ -100,8 +92,8 @@ function renderQuoteTool() {
                     </thead>
                     <tbody>
                         ${CONFIG_ROWS.map(category => renderConfigRow(category)).join('')}
-                        ${state.customItems.map(item => renderCustomRow(item)).join('')}
-                        ${renderNewCustomItemRow()}
+                        ${state.customItems.map(item => renderCustomItemRow(item)).join('')}
+                        ${renderAddCategoryRow()}
                     </tbody>
                 </table>
                 
@@ -160,12 +152,20 @@ function renderConfigRow(category) {
     `;
 }
 
-function renderCustomRow(item) {
+function renderCustomItemRow(item) {
+    const models = state.priceData.prices[item.category] || {};
     return `
         <tr data-custom-id="${item.id}">
-            <td><input type="text" value="${item.category}" readonly /></td>
-            <td><input type="text" value="${item.model}" readonly /></td>
-            <td><input type="number" min="0" value="${item.quantity}" readonly /></td>
+            <td class="config-row-label">${item.category}</td>
+            <td>
+                <select class="custom-model-select">
+                    <option value="">-- 请选择 --</option>
+                    ${Object.keys(models).map(model => `<option value="${model}" ${item.model === model ? 'selected' : ''}>${model}</option>`).join('')}
+                </select>
+            </td>
+            <td>
+                <input type="number" class="custom-quantity-input" min="0" value="${item.quantity}" />
+            </td>
             <td class="config-row-action">
                 <button class="remove-custom-item-btn">-</button>
             </td>
@@ -173,50 +173,108 @@ function renderCustomRow(item) {
     `;
 }
 
-function renderNewCustomItemRow() {
-    const item = state.newCustomItem;
+function renderAddCategoryRow() {
     return `
-        <tr id="new-custom-item-row">
-            <td><input type="text" class="new-custom-category-input" placeholder="类别" value="${item.category}" /></td>
-            <td><input type="text" class="new-custom-model-input" placeholder="型号,成本 (例: 静音风扇,80)" value="${item.model}" /></td>
-            <td><input type="number" class="new-custom-quantity-input" min="1" value="${item.quantity}" /></td>
+        <tr id="add-category-row">
+            <td class="config-row-label">添加新类别</td>
+            <td>
+                <input type="text" id="new-category-input" placeholder="在此输入类别名称 (例如: 机箱)" value="${state.newCategory}" />
+            </td>
+            <td></td>
             <td class="config-row-action">
-                <button id="add-new-custom-item-btn" style="background-color: var(--primary-color);">+</button>
+                <button id="add-category-btn" style="background-color: var(--primary-color);">+</button>
             </td>
         </tr>
     `;
 }
 
 function renderAdminPanel() {
-    // ... (admin panel code is unchanged)
+    const allCategories = Object.keys(state.priceData.prices);
+    const searchTerm = (state.adminSearchTerm || '').toLowerCase();
+    const filteredPriceEntries = Object.entries(state.priceData.prices)
+        .map(([category, models]) => {
+            const filteredModels = Object.entries(models).filter(([model]) =>
+                category.toLowerCase().includes(searchTerm) || model.toLowerCase().includes(searchTerm)
+            );
+            return [category, Object.fromEntries(filteredModels)];
+        })
+        .filter(([, models]) => Object.keys(models).length > 0);
+
     return `
     <div class="adminContainer">
-         <header class="adminHeader">
-            <h2>管理后台</h2>
-            <button id="back-to-quote-btn" class="admin-button">返回报价</button>
+        <header class="adminHeader">
+            <h2>龙盛科技 系统管理后台 V1.01</h2>
+            <button id="back-to-quote-btn" class="admin-button">返回报价首页</button>
         </header>
+
         <div class="admin-section">
-            <h3>系统配置</h3>
-            <div class="adminForm">
-               <label>全局加价倍率:</label>
-               <input type="number" step="0.01" value="${state.priceData.settings.margin}" data-path="settings.margin" />
+            <h3 class="admin-section-header">1. 核心计算参数与折扣</h3>
+            <div class="admin-section-body">
+                <div class="adminForm">
+                   <label>预留加价倍率:</label>
+                   <input type="number" step="0.01" value="${state.priceData.settings.margin}" data-path="settings.margin" class="admin-margin-input" />
+                </div>
             </div>
         </div>
+
         <div class="admin-section">
-            <h3>产品价格管理 (示例)</h3>
-            <div class="adminGrid">
-                ${Object.entries(state.priceData.prices['主机']).map(([model, price]) => `
-                    <div class="adminForm">
-                        <label>${model}:</label>
-                        <input type="number" value="${price}" data-path="prices.主机.${model}" />
-                    </div>
-                `).join('')}
+            <h3 class="admin-section-header">2. 快速录入配件</h3>
+            <div class="admin-section-body">
+                <div class="quick-add-form">
+                     <select id="quick-add-category">
+                        ${allCategories.map(cat => `<option value="${cat}">${cat}</option>`).join('')}
+                        <option value="--new--">-- 添加新分类 --</option>
+                     </select>
+                     <input type="text" id="quick-add-new-category" style="display:none;" placeholder="新分类名" />
+                     <input type="text" id="quick-add-model" placeholder="型号名称" />
+                     <input type="number" id="quick-add-price" placeholder="成本单价" />
+                     <button id="quick-add-btn">确认添加</button>
+                </div>
             </div>
         </div>
-        <button id="save-config-btn" class="generate-btn" style="width: 100%; padding: 0.8rem;">保存配置并下载</button>
+
+        <div class="admin-section">
+             <h3 class="admin-section-header">3. 导入配件 (Excel/Txt)</h3>
+             <div class="admin-section-body">
+                 <div class="import-form">
+                    <input type="file" id="import-file-input" accept=".txt,.csv" />
+                    <button id="import-btn">执行批量导入</button>
+                 </div>
+             </div>
+        </div>
+        
+        <div class="admin-section">
+            <h3 class="admin-section-header">4. 现有数据维护</h3>
+            <div class="admin-section-body">
+                <input type="search" id="admin-search-input" placeholder="输入型号或分类名称搜索..." value="${state.adminSearchTerm}" />
+                <div style="max-height: 400px; overflow-y: auto;">
+                    <table class="admin-data-table">
+                        <thead><tr><th>分类</th><th>型号</th><th>单价</th><th>操作</th></tr></thead>
+                        <tbody>
+                            ${filteredPriceEntries.map(([category, models]) => 
+                                Object.entries(models).map(([model, price]) => `
+                                    <tr data-category="${category}" data-model="${model}">
+                                        <td>${category}</td>
+                                        <td>${model}</td>
+                                        <td><input type="number" class="price-input" value="${price}" /></td>
+                                        <td>
+                                            <button class="admin-save-item-btn">保存</button>
+                                            <button class="admin-delete-item-btn">删除</button>
+                                        </td>
+                                    </tr>
+                                `).join('')
+                            ).join('') || `<tr><td colspan="4" style="text-align:center;">未找到匹配项</td></tr>`}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <button id="save-config-btn" class="generate-btn" style="width: 100%; padding: 0.8rem; margin-top: 1rem;">保存配置并下载</button>
     </div>
     `;
 }
+
 
 // --- LOGIC & EVENT HANDLERS ---
 function calculateTotals() {
@@ -229,7 +287,11 @@ function calculateTotals() {
     }, 0);
 
     const customCost = state.customItems.reduce((acc, item) => {
-        return acc + (item.cost * item.quantity);
+        if (item.model && item.quantity > 0) {
+            const cost = state.priceData.prices[item.category]?.[item.model] ?? 0;
+            return acc + (cost * item.quantity);
+        }
+        return acc;
     }, 0);
     
     const costTotal = standardCost + customCost;
@@ -238,15 +300,25 @@ function calculateTotals() {
     return { finalPrice: Math.max(0, finalPrice) };
 }
 
+function getFinalConfigText() {
+    return [
+        ...Object.entries(state.selection)
+            .filter(([_, { model, quantity }]) => model && quantity > 0)
+            .map(([category, { model, quantity }]) => `${category}: ${model} * ${quantity}`),
+        ...state.customItems
+            .filter(item => item.model && item.quantity > 0)
+            .map(item => `${item.category}: ${item.model} * ${item.quantity}`)
+    ].join('\n');
+}
+
 function handleMatchConfig() {
-    // ... (match config logic is unchanged)
     const input = ($('#matcher-input')).value;
     if (!input) return;
 
     const newSelection = getInitialSelection();
     let tempInput = input.toLowerCase();
 
-    const allModels = Object.entries(priceData.prices)
+    const allModels = Object.entries(state.priceData.prices)
         .flatMap(([category, models]) => 
             Object.keys(models).map(model => ({ model, category }))
         )
@@ -283,7 +355,6 @@ function handleMatchConfig() {
 }
 
 function handleGenerateQuoteText() {
-    // ... (generate quote text logic is unchanged)
     const totals = calculateTotals();
     const finalConfigText = [
         ...Object.entries(state.selection)
@@ -291,7 +362,7 @@ function handleGenerateQuoteText() {
             .map(([category, { model, quantity }]) => `[${category}] ${model} * ${quantity}`),
         ...state.customItems
             .filter(item => item.model && item.quantity > 0)
-            .map(item => `[${item.category || '自定义'}] ${item.model} * ${item.quantity}`)
+            .map(item => `[${item.category}] ${item.model} * ${item.quantity}`)
     ].join('\n');
     
     let text = "✨ 产品报价清单 ✨\n";
@@ -309,27 +380,63 @@ function handleGenerateQuoteText() {
     alert("报价单已复制到剪贴板！");
 }
 
+function handleFileImport(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const text = e.target.result;
+        // FIX: The result of FileReader can be a string or an ArrayBuffer. Add a type check to ensure it's a string before calling .split().
+        if (typeof text === 'string') {
+            const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+            let updatedCount = 0;
+            let addedCount = 0;
+            lines.forEach(line => {
+                const parts = line.split(/[,，\t]/).map(p => p.trim());
+                if (parts.length === 3) {
+                    const [category, model, priceStr] = parts;
+                    const price = parseFloat(priceStr);
+                    if (category && model && !isNaN(price)) {
+                        if (!state.priceData.prices[category]) {
+                            state.priceData.prices[category] = {};
+                        }
+                        if (!state.priceData.prices[category][model]) addedCount++;
+                        else updatedCount++;
+                        state.priceData.prices[category][model] = price;
+                    }
+                }
+            });
+            alert(`导入完成！\n更新: ${updatedCount} 条\n新增: ${addedCount} 条`);
+            render();
+        } else {
+            alert('文件读取失败，内容格式不正确。');
+        }
+    };
+    reader.readAsText(file);
+}
+
 function addEventListeners() {
-    appContainer.onclick = (e) => {
+    // General navigation and quote tool listeners
+    appContainer.addEventListener('click', (e) => {
         const target = e.target.closest('button');
         if (!target) return;
 
         const row = target.closest('tr');
 
         if (target.id === 'admin-login-btn') {
-            if (state.isLoggedIn) { state.view = 'admin'; } 
+            if (state.isLoggedIn) { state.view = 'admin'; render(); } 
             else {
                 const pass = prompt('请输入管理员密码:');
-                if (pass === '1!2@') { state.isLoggedIn = true; state.view = 'admin'; } 
+                if (pass === '112@') { state.isLoggedIn = true; state.view = 'admin'; render(); } 
                 else if (pass) { alert('密码错误！'); }
             }
-            render();
         } else if (target.id === 'back-to-quote-btn') {
             state.view = 'quote'; render();
         } else if (target.id === 'reset-btn') {
             state.selection = getInitialSelection();
             state.customItems = [];
-            state.newCustomItem = getInitialNewCustomItem();
+            state.newCategory = '';
             state.specialDiscount = 0;
             state.discountRate = 1.0;
             render();
@@ -337,18 +444,19 @@ function addEventListeners() {
             const category = row.dataset.category;
             if(category) state.selection[category] = getInitialSelection()[category];
             render();
-        } else if (target.id === 'add-new-custom-item-btn') {
-            const { category, model: modelInput, quantity } = state.newCustomItem;
-            const parts = modelInput.split(/[,，]/);
-            const model = parts[0].trim();
-            const cost = parts.length > 1 ? parseFloat(parts[1]) : 0;
-
-            if (category && model && cost > 0 && quantity > 0) {
-                state.customItems.push({ id: Date.now(), category, model, cost, quantity });
-                state.newCustomItem = getInitialNewCustomItem();
+        } else if (target.id === 'add-category-btn') {
+            if (state.newCategory.trim()) {
+                const newCat = state.newCategory.trim();
+                 if (!state.customItems.some(item => item.category === newCat)) {
+                    state.customItems.push({
+                        id: Date.now(),
+                        category: newCat,
+                        model: '',
+                        quantity: 1
+                    });
+                }
+                state.newCategory = '';
                 render();
-            } else {
-                alert('请填写完整的类别，并确保型号/成本格式正确 (例: 静音风扇,80)。');
             }
         } else if (target.classList.contains('remove-custom-item-btn') && row) {
             const id = Number(row.dataset.customId);
@@ -358,56 +466,110 @@ function addEventListeners() {
             handleMatchConfig();
         } else if (target.id === 'generate-quote-btn') {
             handleGenerateQuoteText();
+        } else if (target.id === 'save-config-btn') {
+            const dataStr = JSON.stringify(state.priceData, null, 2);
+            const blob = new Blob([dataStr], {type: "application/json"});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'prices_data.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        } else if (target.id === 'quick-add-btn') {
+            let category = $('#quick-add-category').value;
+            if (category === '--new--') {
+                category = $('#quick-add-new-category').value.trim();
+            }
+            const model = $('#quick-add-model').value.trim();
+            const price = parseFloat($('#quick-add-price').value);
+            if (category && model && !isNaN(price)) {
+                if (!state.priceData.prices[category]) {
+                    state.priceData.prices[category] = {};
+                }
+                state.priceData.prices[category][model] = price;
+                render();
+            } else {
+                alert('请确保分类、型号和价格都已正确填写。');
+            }
+        } else if (target.classList.contains('admin-save-item-btn') && row) {
+            const { category, model } = row.dataset;
+            const newPrice = parseFloat(row.querySelector('.price-input').value);
+            if (!isNaN(newPrice)) {
+                state.priceData.prices[category][model] = newPrice;
+                target.style.backgroundColor = '#16a34a'; // Visual feedback
+                setTimeout(() => { target.style.backgroundColor = ''; }, 1000);
+            }
+        } else if (target.classList.contains('admin-delete-item-btn') && row) {
+            const { category, model } = row.dataset;
+            if (confirm(`确定要删除 "${category} - ${model}" 吗？`)) {
+                delete state.priceData.prices[category][model];
+                if (Object.keys(state.priceData.prices[category]).length === 0) {
+                    delete state.priceData.prices[category];
+                }
+                render();
+            }
         }
-    };
+    });
 
-    appContainer.oninput = (e) => {
-        const target = e.target;
+    appContainer.addEventListener('input', (e) => {
+        const { target } = e;
+        if (target.id === 'new-category-input') {
+            state.newCategory = target.value; return;
+        } else if (target.id === 'admin-search-input') {
+            state.adminSearchTerm = target.value; render(); return;
+        }
+
         const row = target.closest('tr');
         if (!row) {
             if (target.id === 'special-discount-input') {
-                state.specialDiscount = Math.max(0, Number(target.value));
-                render();
-            } else if (target.closest('.admin-section')) {
-                 const path = target.dataset.path.split('.');
-                 let current = state.priceData;
-                 path.slice(0, -1).forEach(key => current = current[key] || (current[key] = {}));
-                 current[path[path.length - 1]] = isNaN(Number(target.value)) ? target.value : Number(target.value);
+                state.specialDiscount = Math.max(0, Number(target.value)); render();
+            } else if (target.matches('.admin-margin-input')) {
+                state.priceData.settings.margin = Number(target.value);
             }
-            return;
-        };
-
-        if (row.dataset.category) {
-            const category = row.dataset.category;
-            if (target.classList.contains('quantity-input')) {
-                state.selection[category].quantity = Math.max(0, parseInt(target.value, 10) || 0);
-                render();
-            }
-        } else if (row.id === 'new-custom-item-row') {
-            const { newCustomItem } = state;
-            if (target.classList.contains('new-custom-category-input')) newCustomItem.category = target.value;
-            if (target.classList.contains('new-custom-model-input')) newCustomItem.model = target.value;
-            if (target.classList.contains('new-custom-quantity-input')) newCustomItem.quantity = parseInt(target.value, 10) || 1;
-        } else if (row.dataset.customId) {
-            // Make existing custom items non-editable after adding
             return;
         }
-    };
+
+        if (row.dataset.category && !row.dataset.model) { // Standard item
+            const category = row.dataset.category;
+            if (target.classList.contains('quantity-input')) {
+                state.selection[category].quantity = Math.max(0, parseInt(target.value, 10) || 0); render();
+            }
+        } else if (row.dataset.customId) { // Custom item on quote page
+            const id = Number(row.dataset.customId);
+            const item = state.customItems.find(i => i.id === id);
+            if (!item) return;
+            if (target.classList.contains('custom-quantity-input')) {
+                item.quantity = Math.max(0, parseInt(target.value, 10) || 0);
+                render();
+            }
+        }
+    });
     
-    appContainer.onchange = (e) => {
-        const target = e.target;
+    appContainer.addEventListener('change', (e) => {
+        const { target } = e;
+        if (target.id === 'import-file-input') {
+             handleFileImport(e); return;
+        } else if (target.id === 'quick-add-category') {
+            $('#quick-add-new-category').style.display = target.value === '--new--' ? 'block' : 'none';
+        }
+        
         const row = target.closest('tr');
         if (row && row.dataset.category) {
             const category = row.dataset.category;
             if (target.classList.contains('model-select')) {
-                state.selection[category].model = target.value;
+                state.selection[category].model = target.value; render();
+            }
+        } else if (row && row.dataset.customId) {
+            const id = Number(row.dataset.customId);
+            const item = state.customItems.find(i => i.id === id);
+            if (item && target.classList.contains('custom-model-select')) {
+                item.model = target.value;
                 render();
             }
         } else if (target.id === 'discount-select') {
-            state.discountRate = Number(target.value);
-            render();
+            state.discountRate = Number(target.value); render();
         }
-    }
+    });
 }
 
 // --- INITIALIZATION ---
