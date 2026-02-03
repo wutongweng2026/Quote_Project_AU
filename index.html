@@ -78,6 +78,19 @@
             font-family: monospace;
             color: #1e2937;
         }
+        .loading-spinner {
+            width: 56px;
+            height: 56px;
+            border: 7px solid #e5e7eb;
+            border-top-color: var(--primary-color);
+            border-radius: 50%;
+            animation: spin-animation 1s linear infinite;
+        }
+        @keyframes spin-animation {
+            to {
+                transform: rotate(360deg);
+            }
+        }
         .quoteHeader {
             background-color: var(--primary-color);
             color: white;

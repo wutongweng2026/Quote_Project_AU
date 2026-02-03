@@ -211,7 +211,7 @@ function render() {
 }
 
 function renderLoadingScreen() {
-    return `<div class="app-status-container"><h2>正在从云端加载数据...</h2></div>`;
+    return `<div class="app-status-container"><div class="loading-spinner"></div></div>`;
 }
 
 function renderErrorScreen(message: string | null) {
