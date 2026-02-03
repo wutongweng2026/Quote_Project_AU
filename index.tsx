@@ -245,7 +245,7 @@ function renderLoginView() {
         <div class="auth-container">
             <div class="auth-box">
                 <h1>${isSignIn ? '登录报价系统' : '注册新账户'}</h1>
-                <form id="auth-form">
+                <form id="auth-form" novalidate>
                     ${!isSignIn ? `
                         <div class="auth-input-group">
                             <label for="full_name">真实姓名</label>
@@ -258,11 +258,17 @@ function renderLoginView() {
                     ` : ''}
                     <div class="auth-input-group">
                         <label for="email">用户名</label>
-                        <input type="email" id="email" required autocomplete="email" placeholder="请输入您的邮箱地址" />
+                        <input 
+                            type="${isSignIn ? 'text' : 'email'}" 
+                            id="email" 
+                            required 
+                            autocomplete="${isSignIn ? 'username' : 'email'}" 
+                            placeholder="${isSignIn ? '请输入您的用户名' : '请输入您的邮箱地址'}" 
+                        />
                     </div>
                     <div class="auth-input-group">
                         <label for="password">密码</label>
-                        <input type="password" id="password" required autocomplete="${isSignIn ? 'current-password' : 'new-password'}" />
+                        <input type="password" id="password" required autocomplete="${isSignIn ? 'current-password' : 'new-password'}" placeholder="请输入您的密码" />
                     </div>
                     ${state.authError ? `<div class="auth-error">${state.authError}</div>` : ''}
                     <button type="submit" class="auth-button" ${state.authLoading ? 'disabled' : ''}>
@@ -870,16 +876,34 @@ async function handleAuthAction(e: Event) {
 
     const emailInput = ($('#email') as HTMLInputElement);
     const passwordInput = ($('#password') as HTMLInputElement);
-    const email = emailInput.value;
+    const identifier = emailInput.value;
     const password = passwordInput.value;
 
     try {
         if (state.loginView === 'signIn') {
-            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-            if (error) throw error;
-            if (data.user) {
-                const { error: logError } = await supabaseClient.from('login_logs').insert({ user_id: data.user.id, email: data.user.email });
-                if (logError) console.error('Failed to log login event:', logError.message);
+            if (identifier.toLowerCase() === 'admin' && password === 'admin!admin') {
+                // Special admin login. This requires a user with the specified email to exist in Supabase Auth.
+                const { data, error } = await supabaseClient.auth.signInWithPassword({
+                    email: 'admin@system.local',
+                    password: 'admin!admin'
+                });
+
+                if (error) throw error;
+                
+                if (data.user) {
+                    const { error: logError } = await supabaseClient.from('login_logs').insert({ user_id: data.user.id, email: data.user.email });
+                    if (logError) console.error('Failed to log login event:', logError.message);
+                }
+            } else {
+                 // Regular login using the identifier as an email
+                const { data, error } = await supabaseClient.auth.signInWithPassword({ email: identifier, password });
+                
+                if (error) throw error;
+                
+                if (data.user) {
+                    const { error: logError } = await supabaseClient.from('login_logs').insert({ user_id: data.user.id, email: data.user.email });
+                    if (logError) console.error('Failed to log login event:', logError.message);
+                }
             }
         } else { // signUp
             const fullNameInput = ($('#full_name') as HTMLInputElement);
@@ -890,7 +914,7 @@ async function handleAuthAction(e: Event) {
                 throw new Error("姓名和手机号不能为空");
             }
             const { error } = await supabaseClient.auth.signUp({ 
-                email, 
+                email: identifier, // The identifier from the form is the email for sign-up
                 password,
                 options: {
                     data: {
@@ -900,7 +924,7 @@ async function handleAuthAction(e: Event) {
                 }
             });
             if (error) throw error;
-            showModal({ title: '注册成功', message: '您的账户已创建，请等待管理员审批后登录。', onConfirm: () => {
+            showModal({ title: '注册成功', message: '注册成功！您的账户正在等待管理员审批。', onConfirm: () => {
                 state.loginView = 'signIn';
                 render();
             }});
