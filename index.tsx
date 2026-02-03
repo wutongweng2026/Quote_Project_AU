@@ -898,40 +898,17 @@ async function handleAuthAction(e: Event) {
 
     try {
         if (state.loginView === 'signIn') {
-            if (identifier.toLowerCase() === 'admin' && password === 'admin!admin') {
-                let { data, error } = await supabaseClient.auth.signInWithPassword({
-                    email: 'admin@system.local',
-                    password: 'admin!admin',
-                });
+            const emailToSignIn = identifier.toLowerCase() === 'admin' ? 'admin@system.local' : identifier;
 
-                if (error && error.message.toLowerCase().includes('invalid login credentials')) {
-                    const { data: signUpData, error: signUpError } = await supabaseClient.auth.signUp({
-                        email: 'admin@system.local',
-                        password: 'admin!admin',
-                    });
+            const { data, error } = await supabaseClient.auth.signInWithPassword({ 
+                email: emailToSignIn, 
+                password 
+            });
 
-                    if (signUpError) {
-                        throw error;
-                    }
-                    
-                    if (signUpData.user) {
-                        await supabaseClient.from('login_logs').insert({ user_id: signUpData.user.id, email: signUpData.user.email });
-                    }
-                    return; 
-                }
-                
-                if (error) throw error;
-                
-                if (data.user) {
-                    await supabaseClient.from('login_logs').insert({ user_id: data.user.id, email: data.user.email });
-                }
+            if (error) throw error;
 
-            } else {
-                const { data, error } = await supabaseClient.auth.signInWithPassword({ email: identifier, password });
-                if (error) throw error;
-                if (data.user) {
-                    await supabaseClient.from('login_logs').insert({ user_id: data.user.id, email: data.user.email });
-                }
+            if (data.user) {
+                await supabaseClient.from('login_logs').insert({ user_id: data.user.id, email: data.user.email });
             }
         } else { // signUp
             if (!full_name || !phone) {
