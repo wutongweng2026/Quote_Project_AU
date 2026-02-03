@@ -3,7 +3,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=0.75">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>产品报价系统 v1.01 -- 龙盛科技</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -23,6 +23,9 @@
             --font-family: 'Noto Sans SC', sans-serif;
         }
         *, *::before, *::after { box-sizing: border-box; }
+        html {
+            font-size: 13px;
+        }
         body {
             font-family: var(--font-family);
             margin: 0;
@@ -31,7 +34,7 @@
             line-height: 1.5;
         }
         #app {
-            max-width: 900px;
+            max-width: 840px;
             margin: 2rem auto;
             background: var(--card-background);
             border-radius: 12px;
@@ -84,7 +87,7 @@
             transition: background 0.2s;
         }
         .admin-button:hover { background: rgba(255,255,255,0.3); }
-        .quoteBody { padding: 1.5rem; }
+        .quoteBody { padding: 1.25rem 1.5rem; }
         .config-table { width: 100%; border-collapse: separate; border-spacing: 0 1rem; table-layout: fixed; }
         .config-table th {
             text-align: left;
@@ -157,7 +160,7 @@
             font-size: 0.95rem;
             color: var(--secondary-text-color);
         }
-        .controls-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-top: 1.5rem; background: #f9fafb; padding: 1rem; border-radius: 8px; }
+        .controls-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-top: 1.5rem; background: #f9fafb; padding: 1rem; border-radius: 8px; }
         .control-group label { display: block; margin-bottom: 0.25rem; font-size: 0.9rem; }
         .quoteFooter {
             padding: 1rem 1.5rem;
@@ -221,7 +224,7 @@
             background-color: var(--primary-color);
             border-left: 5px solid var(--primary-color-hover);
         }
-        .admin-section-body { padding: 1.2rem; }
+        .admin-section-body { padding: 1rem 1.2rem; }
         .adminForm { display: flex; align-items: center; gap: 1rem; }
         .adminForm label { font-weight: 500; white-space: nowrap; }
         .admin-margin-input, .admin-margin-select { max-width: 150px; }

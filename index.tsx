@@ -753,7 +753,7 @@ function addEventListeners() {
                 state.customModal.onConfirm();
             }
             state.showCustomModal = false;
-            // No re-render here, onConfirm will handle it if needed
+            render();
         } else if (button && button.id === 'modal-confirm-btn') {
             handleLogin();
         } else if (button && button.id === 'app-view-toggle-btn') {
