@@ -1,5 +1,6 @@
 
 
+
 // FIX: The reference to "vite/client" was removed as it was causing a "Cannot find type definition file" error.
 // The necessary types for import.meta.env are defined manually below as a workaround for what is likely a
 // project configuration issue (e.g., in tsconfig.json).
@@ -67,6 +68,7 @@ interface AppState {
     adminSearchTerm: string;
     pendingFile: File | null;
     showCustomModal: boolean;
+    // FIX: Corrected typo from `CustomState` to `CustomModalState`. The type 'CustomState' was not defined.
     customModal: CustomModalState;
     appStatus: 'loading' | 'ready' | 'error';
     errorDetails: string | null;
@@ -677,6 +679,7 @@ function calculateTotals() {
 
     const customCost = state.customItems.reduce((acc, item) => {
         if (item.model && item.quantity > 0) {
+            // FIX: The variable 'model' was not defined in this scope. Changed to 'item.model' to correctly reference the property of the object being iterated.
             const cost = state.priceData.prices[item.category]?.[item.model] ?? 0;
             return acc + (cost * item.quantity);
         }
@@ -897,28 +900,19 @@ async function handleAuthAction(e: Event) {
             } else if (identifier.includes('@')) {
                 emailToSignIn = identifier;
             } else {
-                // Assume it's a username or phone number, find the email
-                const { data: profiles, error: profileError } = await supabaseClient
-                    .from('profiles')
-                    .select('id')
-                    .or(`full_name.eq.${identifier},phone.eq.${identifier}`);
+                // It's a username or phone number, call the RPC function
+                const { data: rpcData, error: rpcError } = await supabaseClient.rpc('get_email_by_identifier', { identifier });
 
-                if (profileError) throw new Error('查询用户信息时出错。');
-                if (!profiles || profiles.length === 0) throw new Error('未找到该用户。');
-                if (profiles.length > 1) throw new Error('找到多个同名或同手机号用户，请使用邮箱登录。');
+                if (rpcError) {
+                    console.error('RPC Error:', rpcError);
+                    throw new Error('查询用户信息时出错，请确认已执行第一步的SQL脚本。');
+                }
                 
-                const userId = profiles[0].id;
+                if (!rpcData) { // rpcData will be the email string, or null if not found
+                    throw new Error('未找到该用户。');
+                }
 
-                // We need admin rights to get user by ID, which is not ideal on client-side.
-                // A better approach is to use an RPC function on Supabase.
-                // For now, let's assume we can fetch the user list and find the email. This is inefficient and less secure.
-                const { data: authUsers, error: authUsersError } = await supabaseClient.auth.admin.listUsers();
-                if (authUsersError) throw new Error('无法验证用户信息。');
-                
-                const user = authUsers.users.find((u: {id: string}) => u.id === userId);
-                if (!user || !user.email) throw new Error('找不到用户的邮箱信息。');
-                
-                emailToSignIn = user.email;
+                emailToSignIn = rpcData;
             }
             
             const { data, error } = await supabaseClient.auth.signInWithPassword({
