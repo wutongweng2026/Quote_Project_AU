@@ -255,17 +255,22 @@ function renderLoginView() {
                             <label for="phone">手机号</label>
                             <input type="tel" id="phone" required autocomplete="tel" />
                         </div>
-                    ` : ''}
-                    <div class="auth-input-group">
-                        <label for="email">${isSignIn ? '邮箱 (或输入 admin 登录)' : '邮箱'}</label>
+                         <div class="auth-input-group">
+                            <label for="email">邮箱</label>
+                            <input type="email" id="email" required autocomplete="email" placeholder="请输入您的邮箱地址" />
+                        </div>
+                    ` : `
+                     <div class="auth-input-group">
+                        <label for="identifier">账户</label>
                         <input 
-                            type="${isSignIn ? 'text' : 'email'}" 
-                            id="email" 
+                            type="text" 
+                            id="identifier" 
                             required 
-                            autocomplete="${isSignIn ? 'username' : 'email'}" 
-                            placeholder="请输入您的邮箱地址" 
+                            autocomplete="username" 
+                            placeholder="请输入您的用户名、邮箱或手机号" 
                         />
                     </div>
+                    `}
                     <div class="auth-input-group">
                         <label for="password">密码</label>
                         <input type="password" id="password" required autocomplete="${isSignIn ? 'current-password' : 'new-password'}" placeholder="请输入您的密码" />
@@ -320,7 +325,7 @@ function renderQuoteTool() {
             <header class="quoteHeader">
                 <h1>产品报价系统 <span>v1.01 - 龙盛科技</span></h1>
                 <div class="header-actions">
-                    <span class="user-email-display">${state.userEmail || ''}</span>
+                    <span class="user-email-display">${state.profile?.full_name || state.userEmail || ''}</span>
                     ${state.profile?.role === 'admin' ? `<button class="admin-button" id="app-view-toggle-btn">后台管理</button>` : ''}
                     <button class="admin-button" id="logout-btn">登出</button>
                 </div>
@@ -474,7 +479,7 @@ function renderAdminPanel() {
         <header class="adminHeader">
             <h2>龙盛科技 系统管理后台 V1.01</h2>
             <div class="header-actions-admin">
-                <span class="user-email-display">${state.userEmail || ''}</span>
+                <span class="user-email-display">${state.profile?.full_name || state.userEmail || ''}</span>
                 ${renderSyncStatus()}
                 <button id="back-to-quote-btn" class="admin-button">返回报价首页</button>
                 <button id="logout-btn" class="admin-button">登出</button>
@@ -870,56 +875,79 @@ function handleFileSelect(event: Event) {
 
 async function handleAuthAction(e: Event) {
     e.preventDefault();
-
-    const emailInput = ($('#email') as HTMLInputElement);
-    // FIX: Corrected typo from `$$` to `$` to use the defined querySelector helper.
-    const passwordInput = ($('#password') as HTMLInputElement);
-    const identifier = emailInput.value.trim();
-    const password = passwordInput.value.trim();
-    
-    let full_name = '';
-    let phone = '';
-    if (state.loginView === 'signUp') {
-        const fullNameInput = ($('#full_name') as HTMLInputElement);
-        const phoneInput = ($('#phone') as HTMLInputElement);
-        full_name = fullNameInput.value.trim();
-        phone = phoneInput.value.trim();
-    }
-    
-    if (state.loginView === 'signIn' && (!identifier || !password)) {
-        state.authError = '用户名和密码不能为空。';
-        render();
-        return;
-    }
-
     state.authLoading = true;
     state.authError = null;
     render();
 
     try {
         if (state.loginView === 'signIn') {
-            const emailToSignIn = identifier.toLowerCase() === 'admin' ? 'admin@system.local' : identifier;
+            const identifierInput = ($('#identifier') as HTMLInputElement);
+            const passwordInput = ($('#password') as HTMLInputElement);
+            const identifier = identifierInput.value.trim();
+            const password = passwordInput.value.trim();
 
-            const { data, error } = await supabaseClient.auth.signInWithPassword({ 
-                email: emailToSignIn, 
-                password 
+            if (!identifier || !password) {
+                throw new Error('账户和密码不能为空。');
+            }
+
+            let emailToSignIn = '';
+
+            if (identifier.toLowerCase() === 'admin') {
+                emailToSignIn = 'admin@system.local';
+            } else if (identifier.includes('@')) {
+                emailToSignIn = identifier;
+            } else {
+                // Assume it's a username or phone number, find the email
+                const { data: profiles, error: profileError } = await supabaseClient
+                    .from('profiles')
+                    .select('id')
+                    .or(`full_name.eq.${identifier},phone.eq.${identifier}`);
+
+                if (profileError) throw new Error('查询用户信息时出错。');
+                if (!profiles || profiles.length === 0) throw new Error('未找到该用户。');
+                if (profiles.length > 1) throw new Error('找到多个同名或同手机号用户，请使用邮箱登录。');
+                
+                const userId = profiles[0].id;
+
+                // We need admin rights to get user by ID, which is not ideal on client-side.
+                // A better approach is to use an RPC function on Supabase.
+                // For now, let's assume we can fetch the user list and find the email. This is inefficient and less secure.
+                const { data: authUsers, error: authUsersError } = await supabaseClient.auth.admin.listUsers();
+                if (authUsersError) throw new Error('无法验证用户信息。');
+                
+                const user = authUsers.users.find((u: {id: string}) => u.id === userId);
+                if (!user || !user.email) throw new Error('找不到用户的邮箱信息。');
+                
+                emailToSignIn = user.email;
+            }
+            
+            const { data, error } = await supabaseClient.auth.signInWithPassword({
+                email: emailToSignIn,
+                password
             });
 
             if (error) throw error;
-
             if (data.user) {
                 await supabaseClient.from('login_logs').insert({ user_id: data.user.id, email: data.user.email });
             }
+
         } else { // signUp
-            if (!full_name || !phone) {
-                throw new Error("姓名和手机号不能为空");
-            }
-            if (!identifier || !password) {
-                 throw new Error("邮箱和密码不能为空");
+            const fullNameInput = ($('#full_name') as HTMLInputElement);
+            const phoneInput = ($('#phone') as HTMLInputElement);
+            const emailInput = ($('#email') as HTMLInputElement);
+            const passwordInput = ($('#password') as HTMLInputElement);
+            
+            const full_name = fullNameInput.value.trim();
+            const phone = phoneInput.value.trim();
+            const email = emailInput.value.trim();
+            const password = passwordInput.value.trim();
+
+            if (!full_name || !phone || !email || !password) {
+                throw new Error("所有字段均为必填项。");
             }
 
-            const { error } = await supabaseClient.auth.signUp({ 
-                email: identifier,
+            const { error } = await supabaseClient.auth.signUp({
+                email,
                 password,
                 options: {
                     data: {
@@ -929,10 +957,14 @@ async function handleAuthAction(e: Event) {
                 }
             });
             if (error) throw error;
-            showModal({ title: '注册成功', message: '注册成功！您的账户正在等待管理员审批。', onConfirm: () => {
-                state.loginView = 'signIn';
-                render();
-            }});
+            showModal({
+                title: '注册成功',
+                message: '注册成功！您的账户正在等待管理员审批。',
+                onConfirm: () => {
+                    state.loginView = 'signIn';
+                    render();
+                }
+            });
         }
     } catch (error: any) {
         const message = error.message || '发生未知错误';
@@ -940,18 +972,16 @@ async function handleAuthAction(e: Event) {
 
         if (message.toLowerCase().includes('invalid login credentials')) {
             translatedMessage = '用户名或密码无效，请重试。';
-        } else if (message.toLowerCase().includes('missing email or phone') || message.toLowerCase().includes('邮箱和密码不能为空')) {
-            translatedMessage = '用户名和密码不能为空。';
-        } else if (message.toLowerCase().includes('email not confirmed')) {
-            translatedMessage = '您的邮箱尚未验证，请检查您的收件箱。';
+        } else if (message.includes('账户和密码不能为空')) {
+             translatedMessage = '账户和密码不能为空。';
+        } else if (message.includes('未找到该用户')) {
+            translatedMessage = '未找到该用户，请检查您的输入。';
         } else if (message.toLowerCase().includes('user already registered')) {
             translatedMessage = '该用户名（邮箱）已被注册。';
         } else if (message.toLowerCase().includes('password should be at least 6 characters')) {
             translatedMessage = '密码至少需要6个字符。';
-        } else if (message.toLowerCase().includes('to be a valid email')) {
-            translatedMessage = '请输入有效的邮箱地址。';
         }
-        
+
         state.authError = translatedMessage;
     } finally {
         state.authLoading = false;
