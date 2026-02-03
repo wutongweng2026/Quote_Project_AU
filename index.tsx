@@ -26,8 +26,7 @@ interface CustomModalState {
     isDanger: boolean;
 }
 interface AppState {
-    priceData: PriceData | null;
-    loadingError: string | null;
+    priceData: PriceData;
     isLoggedIn: boolean;
     view: 'quote' | 'admin';
     selection: SelectionState;
@@ -35,7 +34,7 @@ interface AppState {
     newCategory: string;
     specialDiscount: number;
     discountRate: number;
-    selectedMargin: number | null;
+    selectedMargin: number;
     adminSearchTerm: string;
     pendingFile: File | null;
     showLoginModal: boolean;
@@ -45,6 +44,32 @@ interface AppState {
 }
 
 // --- DATA (Embedded) & CONFIG ---
+const PRICE_DATA: PriceData = {
+  "settings": {
+    "margin": 1.15
+  },
+  "marginOptions": [
+    { "label": "标准 (1.15)", "value": 1.15 },
+    { "label": "中等 (1.20)", "value": 1.2 },
+    { "label": "较高 (1.30)", "value": 1.3 }
+  ],
+  "prices": {
+    "内存": { "8G DDR5 5600": 750, "16G DDR5 5600": 1650 },
+    "硬盘": { "512G SSD": 600, "1T SSD": 1100, "2T SATA": 800 },
+    "显卡": { "T400 4G": 900, "T1000 4G": 2200, "T1000 8G": 2900, "RTX5060 8G": 2700, "RTX4060 8G": 2750, "RTX5060ti 8G": 3200, "RTX5060ti 16G": 5000, "RX6600LE 8G": 1800, "RTX3060": 2300 },
+    "显示器": { "21.5-TE22-19": 360, "23.8-T24A-20": 530, "来酷27寸B2737": 460, "慧天V24 23.8": 350 },
+    "电源": { "300W": 0, "500W": 200 },
+    "主机": { "TSK-C3 I5-13400": 2800, "TSK-C3 I5-14400": 3100, "TSK-C3 I5-14500": 3200, "TSK-C3 I7-13700": 4550, "TSK-C3 I7-14700": 5450, "TSK-C3 I9-14900": 5550, "TSK-C4 Ultra5-235": 3300, "TSK-C4 Ultra7-265": 4550 }
+  },
+  "discounts": [
+    { "label": "无折扣 (1.0)", "rate": 1.0 },
+    { "label": "批量折扣 (0.99)", "rate": 0.99 }
+  ],
+  "tieredDiscounts": [
+    { "id": 1721360183321, "threshold": 10, "rate": 0.99 }
+  ]
+};
+
 const CONFIG_ROWS = ['主机', '内存', '硬盘1', '硬盘2', '显卡', '电源', '显示器'];
 declare var XLSX: any;
 
@@ -60,16 +85,15 @@ const getInitialSelection = (): SelectionState => ({
 });
 
 const state: AppState = {
-    priceData: null, // Will be loaded from JSON
-    loadingError: null, // To store loading errors
+    priceData: PRICE_DATA,
     isLoggedIn: false,
-    view: 'quote', // 'quote' or 'admin'
+    view: 'quote',
     selection: getInitialSelection(),
     customItems: [],
     newCategory: '',
     specialDiscount: 0,
-    discountRate: 1.0,
-    selectedMargin: null,
+    discountRate: PRICE_DATA.discounts[0]?.rate || 1.0,
+    selectedMargin: PRICE_DATA.settings.margin,
     adminSearchTerm: '',
     pendingFile: null,
     showLoginModal: false,
@@ -98,21 +122,6 @@ const appContainer = $('#app')!;
 
 // --- RENDER FUNCTIONS ---
 function render() {
-    if (state.loadingError) {
-        appContainer.innerHTML = `
-            <div class="loading-container error">
-                <h1>加载价格数据失败</h1>
-                <p>请检查 'prices_data.json' 文件是否存在且格式正确。</p>
-                <p style="color: #9ca3af; font-size: 0.9em; margin-top: 1rem;"><strong>技术细节:</strong> ${state.loadingError}</p>
-            </div>`;
-        return;
-    }
-
-    if (!state.priceData) {
-        appContainer.innerHTML = `<div class="loading-container"><h2>正在加载价格数据...</h2></div>`;
-        return;
-    }
-
     let html = '';
     if (state.view === 'quote') {
         html = renderQuoteTool();
@@ -164,12 +173,10 @@ function renderCustomModal() {
 }
 
 function renderQuoteTool() {
-    if (!state.priceData) return '';
     const totals = calculateTotals();
     const finalConfigText = getFinalConfigText();
     const lastUpdated = state.priceData.lastUpdated;
     const formattedDate = lastUpdated ? `价格更新: ${new Date(lastUpdated).toLocaleString('zh-CN')}` : '';
-
 
     return `
         <div class="quoteContainer">
@@ -252,7 +259,6 @@ function renderQuoteTool() {
 }
 
 function renderConfigRow(category: string) {
-    if (!state.priceData) return '';
     const dataCategory = category.startsWith('硬盘') ? '硬盘' : category;
     const models = state.priceData.prices[dataCategory] || {};
     const currentSelection = state.selection[category];
@@ -276,7 +282,6 @@ function renderConfigRow(category: string) {
 }
 
 function renderCustomItemRow(item: CustomItem) {
-    if (!state.priceData) return '';
     const models = state.priceData.prices[item.category] || {};
     return `
         <tr data-custom-id="${item.id}">
@@ -313,7 +318,6 @@ function renderAddCategoryRow() {
 }
 
 function renderAdminPanel() {
-    if (!state.priceData) return '';
     const allCategories = Object.keys(state.priceData.prices);
     const searchTerm = (state.adminSearchTerm || '').toLowerCase();
     const filteredPriceEntries = Object.entries(state.priceData.prices)
@@ -340,7 +344,7 @@ function renderAdminPanel() {
                     <div id="margin-options-list">
                     ${(state.priceData.marginOptions || []).map((opt, index) => `
                         <div class="margin-option-row" data-index="${index}">
-                            <input type="radio" name="default-margin" class="margin-default-radio" value="${opt.value}" ${state.priceData!.settings.margin === opt.value ? 'checked' : ''} />
+                            <input type="radio" name="default-margin" class="margin-default-radio" value="${opt.value}" ${state.priceData.settings.margin === opt.value ? 'checked' : ''} />
                             <input type="text" class="margin-label-input" value="${opt.label}" placeholder="标签" />
                             <input type="number" step="0.01" class="margin-value-input" value="${opt.value}" placeholder="倍率" />
                             <button class="remove-margin-btn">删除</button>
@@ -446,12 +450,10 @@ function showModal(options: Partial<CustomModalState>) {
 }
 
 function calculateTotals() {
-    if (!state.priceData) return { finalPrice: 0 };
-
     const standardCost = Object.entries(state.selection).reduce((acc, [category, { model, quantity }]) => {
         if (model && quantity > 0) {
             const dataCategory = category.startsWith('硬盘') ? '硬盘' : category;
-            const cost = state.priceData!.prices[dataCategory]?.[model] ?? 0;
+            const cost = state.priceData.prices[dataCategory]?.[model] ?? 0;
             return acc + (cost * quantity);
         }
         return acc;
@@ -459,14 +461,14 @@ function calculateTotals() {
 
     const customCost = state.customItems.reduce((acc, item) => {
         if (item.model && item.quantity > 0) {
-            const cost = state.priceData!.prices[item.category]?.[item.model] ?? 0;
+            const cost = state.priceData.prices[item.category]?.[item.model] ?? 0;
             return acc + (cost * item.quantity);
         }
         return acc;
     }, 0);
     
     const costTotal = standardCost + customCost;
-    const priceBeforeDiscount = costTotal * (state.selectedMargin || 1);
+    const priceBeforeDiscount = costTotal * state.selectedMargin;
     let finalPrice = priceBeforeDiscount * state.discountRate - state.specialDiscount;
     
     finalPrice = Math.max(0, finalPrice);
@@ -504,13 +506,12 @@ function getFinalConfigText() {
 }
 
 function handleMatchConfig() {
-    if (!state.priceData) return;
     const input = ($('#matcher-input') as HTMLInputElement).value;
     if (!input) return;
 
     // 1. Prepare data
     const newSelection = getInitialSelection();
-    const allModels = Object.entries(state.priceData!.prices)
+    const allModels = Object.entries(state.priceData.prices)
         .flatMap(([category, models]) =>
             Object.keys(models).map(model => ({
                 model,
@@ -581,7 +582,6 @@ function handleMatchConfig() {
 }
 
 function handleExportExcel() {
-    if (!state.priceData) return;
     const totals = calculateTotals();
     let costTotal = 0;
     
@@ -597,7 +597,7 @@ function handleExportExcel() {
     allItems.forEach(([category, { model, quantity }]) => {
         if (model && quantity > 0) {
             const dataCategory = category.startsWith('硬盘') ? '硬盘' : category;
-            const cost = state.priceData!.prices[dataCategory]?.[model] ?? 0;
+            const cost = state.priceData.prices[dataCategory]?.[model] ?? 0;
             const subtotal = cost * quantity;
             costTotal += subtotal;
             rows.push([category, model, cost.toString(), quantity.toString(), subtotal.toString()]);
@@ -660,7 +660,6 @@ function handleLogin() {
 }
 
 function processImportedData(data: any[][]) {
-    if (!state.priceData) return;
     let updatedCount = 0;
     let addedCount = 0;
     let importHappened = false;
@@ -699,12 +698,12 @@ function processImportedData(data: any[][]) {
             }
 
             if (category && model && !isNaN(price)) {
-                if (!state.priceData!.prices[category]) {
-                    state.priceData!.prices[category] = {};
+                if (!state.priceData.prices[category]) {
+                    state.priceData.prices[category] = {};
                 }
-                if (state.priceData!.prices[category][model] === undefined) addedCount++;
+                if (state.priceData.prices[category][model] === undefined) addedCount++;
                 else updatedCount++;
-                state.priceData!.prices[category][model] = price;
+                state.priceData.prices[category][model] = price;
                 importHappened = true;
             }
         }
@@ -729,7 +728,6 @@ function processImportedData(data: any[][]) {
 
 function addEventListeners() {
     appContainer.addEventListener('click', (e) => {
-        if (!state.priceData) return;
         const target = e.target as HTMLElement;
         if (!target) return;
         
@@ -774,7 +772,7 @@ function addEventListeners() {
             state.newCategory = '';
             state.specialDiscount = 0;
             state.discountRate = 1.0;
-            state.selectedMargin = state.priceData!.settings.margin;
+            state.selectedMargin = state.priceData.settings.margin;
             render();
         } else if (button && button.classList.contains('remove-item-btn') && row) {
             const category = row.dataset.category;
@@ -797,9 +795,9 @@ function addEventListeners() {
             handleExportExcel();
         } else if (button && button.id === 'export-all-prices-btn') {
             const rows = [['分类', '型号', '单价']];
-            const sortedCategories = Object.keys(state.priceData!.prices).sort();
+            const sortedCategories = Object.keys(state.priceData.prices).sort();
             for (const category of sortedCategories) {
-                const models = state.priceData!.prices[category];
+                const models = state.priceData.prices[category];
                 if (models) {
                     const sortedModels = Object.keys(models).sort();
                     for (const model of sortedModels) {
@@ -831,8 +829,8 @@ function addEventListeners() {
             const model = ($('#quick-add-model') as HTMLInputElement).value.trim();
             const price = parseFloat(($('#quick-add-price') as HTMLInputElement).value);
             if (category && model && !isNaN(price)) {
-                if (!state.priceData!.prices[category]) state.priceData!.prices[category] = {};
-                state.priceData!.prices[category][model] = price;
+                if (!state.priceData.prices[category]) state.priceData.prices[category] = {};
+                state.priceData.prices[category][model] = price;
                 updateTimestamp();
                 render();
             } else { 
@@ -842,8 +840,8 @@ function addEventListeners() {
             const { category, model } = row.dataset;
             const newPrice = parseFloat((row.querySelector('.price-input') as HTMLInputElement).value);
             if (category && model && !isNaN(newPrice)) {
-                if (state.priceData!.prices[category]) {
-                    state.priceData!.prices[category][model] = newPrice;
+                if (state.priceData.prices[category]) {
+                    state.priceData.prices[category][model] = newPrice;
                     updateTimestamp();
                     button.style.backgroundColor = '#16a34a';
                     setTimeout(() => { button.style.backgroundColor = ''; }, 1000);
@@ -859,9 +857,9 @@ function addEventListeners() {
                     isDanger: true,
                     confirmText: '删除',
                     onConfirm: () => {
-                        if(state.priceData!.prices[category]) {
-                            delete state.priceData!.prices[category][model];
-                            if (Object.keys(state.priceData!.prices[category]).length === 0) delete state.priceData!.prices[category];
+                        if(state.priceData.prices[category]) {
+                            delete state.priceData.prices[category][model];
+                            if (Object.keys(state.priceData.prices[category]).length === 0) delete state.priceData.prices[category];
                             updateTimestamp();
                             render();
                         }
@@ -869,27 +867,23 @@ function addEventListeners() {
                 });
             }
         } else if (button && button.id === 'add-tier-btn') {
-            state.priceData!.tieredDiscounts.push({ id: Date.now(), threshold: 0, rate: 0 });
+            state.priceData.tieredDiscounts.push({ id: Date.now(), threshold: 0, rate: 0 });
             render();
         } else if (button && button.classList.contains('remove-tier-btn') && tierRow) {
             const tierId = Number(tierRow.dataset.tierId);
-            if (state.priceData) {
-                state.priceData.tieredDiscounts = state.priceData.tieredDiscounts.filter(t => t.id !== tierId);
-            }
+            state.priceData.tieredDiscounts = state.priceData.tieredDiscounts.filter(t => t.id !== tierId);
             render();
         } else if (button && button.id === 'add-margin-btn') {
-            state.priceData!.marginOptions.push({ label: '新倍率', value: 1.0 });
+            state.priceData.marginOptions.push({ label: '新倍率', value: 1.0 });
             render();
         } else if (button && button.classList.contains('remove-margin-btn') && marginRow) {
             const index = parseInt(marginRow.dataset.index!, 10);
-            const wasDefault = state.priceData!.marginOptions[index].value === state.priceData!.settings.margin;
-            state.priceData!.marginOptions.splice(index, 1);
-            if (state.priceData!) {
-                if (wasDefault && state.priceData!.marginOptions.length > 0) {
-                    state.priceData!.settings.margin = state.priceData!.marginOptions[0].value;
-                } else if (state.priceData!.marginOptions.length === 0) {
-                    state.priceData!.settings.margin = 1.0;
-                }
+            const wasDefault = state.priceData.marginOptions[index].value === state.priceData.settings.margin;
+            state.priceData.marginOptions.splice(index, 1);
+            if (wasDefault && state.priceData.marginOptions.length > 0) {
+                state.priceData.settings.margin = state.priceData.marginOptions[0].value;
+            } else if (state.priceData.marginOptions.length === 0) {
+                state.priceData.settings.margin = 1.0;
             }
             render();
         } else if (button && button.id === 'save-params-btn') {
@@ -938,7 +932,6 @@ function addEventListeners() {
     });
 
     appContainer.addEventListener('input', (e) => {
-        if (!state.priceData) return;
         const target = e.target as HTMLInputElement;
         const row = target.closest<HTMLTableRowElement>('tr');
         const tierRow = target.closest<HTMLElement>('.tier-row');
@@ -948,7 +941,7 @@ function addEventListeners() {
 
         if (tierRow) {
             const tierId = Number(tierRow.dataset.tierId);
-            const tier = state.priceData!.tieredDiscounts.find(t => t.id === tierId);
+            const tier = state.priceData.tieredDiscounts.find(t => t.id === tierId);
             if (!tier) return;
             if (target.classList.contains('tier-threshold')) tier.threshold = Number(target.value);
             if (target.classList.contains('tier-rate')) tier.rate = Number(target.value);
@@ -971,7 +964,6 @@ function addEventListeners() {
     });
     
     appContainer.addEventListener('change', (e) => {
-        if (!state.priceData) return;
         const target = e.target as HTMLInputElement | HTMLSelectElement;
         const row = target.closest<HTMLTableRowElement>('tr');
         const marginRow = target.closest<HTMLElement>('.margin-option-row');
@@ -979,12 +971,10 @@ function addEventListeners() {
         if (target.id === 'import-file-input') { handleFileSelect(e as unknown as Event); return; }
         
         if (target.classList.contains('margin-default-radio')) {
-            if (state.priceData) {
-                state.priceData.settings.margin = Number((target as HTMLInputElement).value);
-            }
+            state.priceData.settings.margin = Number((target as HTMLInputElement).value);
         } else if (marginRow && (target.classList.contains('margin-label-input') || target.classList.contains('margin-value-input'))) {
             const index = parseInt(marginRow.dataset.index!, 10);
-            const option = state.priceData!.marginOptions[index];
+            const option = state.priceData.marginOptions[index];
             if (!option) return;
             const oldValue = option.value;
             
@@ -992,8 +982,8 @@ function addEventListeners() {
             const newValue = parseFloat((marginRow.querySelector('.margin-value-input') as HTMLInputElement).value);
             option.value = isNaN(newValue) ? 0 : newValue;
 
-            if (state.priceData && state.priceData!.settings.margin === oldValue) {
-                state.priceData!.settings.margin = option.value;
+            if (state.priceData.settings.margin === oldValue) {
+                state.priceData.settings.margin = option.value;
             }
             render();
         } else if (target.id === 'quick-add-category') {
@@ -1011,8 +1001,6 @@ function addEventListeners() {
         }
     });
 
-    // Add keydown listener for the modal
-    // FIX: Explicitly type `e` as `any` to address the overload error.
     appContainer.addEventListener('keydown', (e: any) => {
         if (state.showLoginModal && e.key === 'Enter') {
             e.preventDefault();
@@ -1022,53 +1010,9 @@ function addEventListeners() {
 }
 
 // --- INITIALIZATION ---
-async function initializeApp() {
-    render(); // Initial render to show "loading..." message
-
-    try {
-        const response = await fetch('/prices_data.json');
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const priceData = await response.json();
-
-        // Basic validation of the loaded data
-        if (!priceData || typeof priceData.prices !== 'object') {
-             throw new Error("Price data is malformed or missing key properties.");
-        }
-
-        state.priceData = priceData as PriceData;
-
-        // Initialize state from loaded data, providing defaults if properties are missing
-        if (state.priceData.discounts && state.priceData.discounts.length > 0) {
-            state.discountRate = state.priceData.discounts[0].rate;
-        } else {
-            state.priceData.discounts = [{ label: "无折扣", rate: 1.0 }];
-            state.discountRate = 1.0;
-        }
-
-        if (state.priceData.settings && typeof state.priceData.settings.margin === 'number') {
-            state.selectedMargin = state.priceData.settings.margin;
-        } else {
-            state.priceData.settings = { margin: 1.15 };
-            state.selectedMargin = 1.15;
-        }
-        
-        if (!Array.isArray(state.priceData.marginOptions) || state.priceData.marginOptions.length === 0) {
-            state.priceData.marginOptions = [{ label: '标准 (1.15)', value: 1.15 }];
-        }
-        if (!Array.isArray(state.priceData.tieredDiscounts)) {
-            state.priceData.tieredDiscounts = [];
-        }
-
-    } catch (error: any) {
-        console.error("Could not load price data, using fallback:", error);
-        state.loadingError = error.message;
-    }
-
-    render(); // Render the main UI with either loaded data or fallback data.
+function initializeApp() {
+    render();
 }
-
 
 addEventListeners();
 initializeApp();
