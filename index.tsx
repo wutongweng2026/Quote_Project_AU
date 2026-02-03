@@ -2,21 +2,6 @@
 // --- DATA (Embedded) & CONFIG ---
 const CONFIG_ROWS = ['主机', '内存', '硬盘', '硬盘2', '显卡', '电源', '显示器'];
 
-const priceData = {
-  "settings": { "margin": 1.2 },
-  "prices": {
-    "内存": { "8G DDR5 5600": 750, "16G DDR5 5600": 1650 },
-    "硬盘": { "512G SSD": 600, "1T SSD": 1100, "2T SATA": 800 },
-    "硬盘2": { "512G SSD": 600, "1T SSD": 1100, "2T SATA": 800 }, // Same as 硬盘
-    "显卡": { "T400 4G": 900, "T1000 4G": 2200, "T1000 8G": 2900, "RTX5060 8G": 2700, "RTX4060 8G": 2750, "RTX5060ti 8G": 3200, "RTX5060ti 16G": 5000, "RX6600LE 8G": 1800, "RTX3060": 2300 },
-    "显示器": { "21.5-TE22-19": 360, "23.8-T24A-20": 530, "来酷27寸B2737": 460, "慧天V24 23.8": 350 },
-    "电源": { "300W": 0, "500W": 200 },
-    "主机": { "TSK-C3 I5-13400": 2800, "TSK-C3 I5-14400": 3100, "TSK-C3 I5-14500": 3200, "TSK-C3 I7-13700": 4550, "TSK-C3 I7-14700": 5450, "TSK-C3 I9-14900": 5550, "TSK-C4 Ultra5-235": 3300, "TSK-C4 Ultra7-265": 4550 }
-  },
-  "discounts": [{ "label": "无折扣 (1.0)", "rate": 1.0 }, { "label": "批量折扣 (0.99)", "rate": 0.99 }],
-  "tieredDiscounts": []
-};
-
 // --- STATE MANAGEMENT ---
 const getInitialSelection = () => ({
     '主机': { model: '', quantity: 1 },
@@ -29,7 +14,7 @@ const getInitialSelection = () => ({
 });
 
 const state = {
-    priceData: JSON.parse(JSON.stringify(priceData)), // Deep copy for mutable state
+    priceData: null, // Will be loaded from JSON
     isLoggedIn: false,
     view: 'quote', // 'quote' or 'admin'
     selection: getInitialSelection(),
@@ -49,6 +34,11 @@ const appContainer = $('#app');
 
 // --- RENDER FUNCTIONS ---
 function render() {
+    if (!state.priceData) {
+        appContainer.innerHTML = `<h1>正在加载价格数据...</h1>`;
+        return;
+    }
+
     let html = '';
     if (state.view === 'quote') {
         html = renderQuoteTool();
