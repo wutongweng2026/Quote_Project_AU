@@ -1,5 +1,4 @@
 
-
 // --- DATA (Embedded) & CONFIG ---
 const CONFIG_ROWS = ['主机', '内存', '硬盘1', '硬盘2', '显卡', '电源', '显示器'];
 declare var XLSX: any;
@@ -17,6 +16,7 @@ const getInitialSelection = () => ({
 
 const state = {
     priceData: null, // Will be loaded from JSON
+    loadingError: null, // To store loading errors
     isLoggedIn: false,
     view: 'quote', // 'quote' or 'admin'
     selection: getInitialSelection(),
@@ -53,6 +53,16 @@ const appContainer = $('#app');
 
 // --- RENDER FUNCTIONS ---
 function render() {
+    if (state.loadingError) {
+        appContainer.innerHTML = `
+            <div class="loading-container error">
+                <h1>加载价格数据失败</h1>
+                <p>请检查 'prices_data.json' 文件是否存在且格式正确。</p>
+                <p style="color: #9ca3af; font-size: 0.9em; margin-top: 1rem;"><strong>技术细节:</strong> ${state.loadingError}</p>
+            </div>`;
+        return;
+    }
+
     if (!state.priceData) {
         appContainer.innerHTML = `<div class="loading-container"><h2>正在加载价格数据...</h2></div>`;
         return;
@@ -196,7 +206,8 @@ function renderQuoteTool() {
 }
 
 function renderConfigRow(category) {
-    const models = state.priceData.prices[category] || {};
+    const dataCategory = category.startsWith('硬盘') ? '硬盘' : category;
+    const models = state.priceData.prices[dataCategory] || {};
     const currentSelection = state.selection[category];
     return `
         <tr data-category="${category}">
@@ -388,7 +399,8 @@ function showModal(options) {
 function calculateTotals() {
     const standardCost = Object.entries(state.selection).reduce((acc, [category, { model, quantity }]) => {
         if (model && quantity > 0) {
-            const cost = state.priceData.prices[category]?.[model] ?? 0;
+            const dataCategory = category.startsWith('硬盘') ? '硬盘' : category;
+            const cost = state.priceData.prices[dataCategory]?.[model] ?? 0;
             return acc + (cost * quantity);
         }
         return acc;
@@ -441,7 +453,7 @@ function getFinalConfigText() {
 }
 
 function handleMatchConfig() {
-    const input = ($('#matcher-input')).value;
+    const input = ($('#matcher-input') as HTMLInputElement).value;
     if (!input) return;
 
     // 1. Prepare data
@@ -466,7 +478,7 @@ function handleMatchConfig() {
 
         if (hddComponent) {
             const [part1Str, part2Str] = hddComponent.split('+').map(p => p.trim());
-            const hddModels = allModels.filter(m => m.category.startsWith('硬盘'));
+            const hddModels = allModels.filter(m => m.category === '硬盘');
 
             const model1 = hddModels.find(m => part1Str.toLowerCase().replace(/\s/g, '').includes(m.normalizedModel));
             const model2 = hddModels.find(m => part2Str.toLowerCase().replace(/\s/g, '').includes(m.normalizedModel));
@@ -489,7 +501,7 @@ function handleMatchConfig() {
         if (tempInput.replace(/\s/g, '').includes(normalizedModel)) {
             let targetCategory = category;
 
-            if (hddFillOrder.includes(category)) {
+            if (category === '硬盘') {
                 const availableSlot = hddFillOrder.find(cat => newSelection[cat].model === '');
                 if (availableSlot) {
                     targetCategory = availableSlot;
@@ -531,7 +543,8 @@ function handleExportExcel() {
 
     allItems.forEach(([category, { model, quantity }]) => {
         if (model && quantity > 0) {
-            const cost = state.priceData.prices[category]?.[model] ?? 0;
+            const dataCategory = category.startsWith('硬盘') ? '硬盘' : category;
+            const cost = state.priceData.prices[dataCategory]?.[model] ?? 0;
             const subtotal = cost * quantity;
             costTotal += subtotal;
             rows.push([category, model, cost.toString(), quantity.toString(), subtotal.toString()]);
@@ -565,19 +578,20 @@ function handleExportExcel() {
     }
 }
 
-function handleFileSelect(event) {
-    const file = event.target.files[0];
+function handleFileSelect(event: Event) {
+    const target = event.target as HTMLInputElement;
+    const file = target.files ? target.files[0] : null;
     if (!file) {
-        $('#file-name-display').textContent = '未选择文件';
+        ($('#file-name-display') as HTMLElement).textContent = '未选择文件';
         state.pendingFile = null;
         return;
     }
-    $('#file-name-display').textContent = file.name;
+    ($('#file-name-display') as HTMLElement).textContent = file.name;
     state.pendingFile = file;
 }
 
 function handleLogin() {
-    const passwordInput = ($('#password-input'));
+    const passwordInput = ($('#password-input') as HTMLInputElement);
     const password = passwordInput.value;
     if (password === '112@') {
         state.isLoggedIn = true;
@@ -592,7 +606,7 @@ function handleLogin() {
     }
 }
 
-function processImportedData(data) {
+function processImportedData(data: any[][]) {
     let updatedCount = 0;
     let addedCount = 0;
     let importHappened = false;
@@ -622,9 +636,13 @@ function processImportedData(data) {
     for (let i = startIndex; i < data.length; i++) {
         const row = data[i];
         if (row && row.length >= 3) {
-            const category = String(row[categoryIndex] || '').trim();
+            let category = String(row[categoryIndex] || '').trim();
             const model = String(row[modelIndex] || '').trim();
             const price = parseFloat(row[priceIndex]);
+
+            if (category.startsWith('硬盘')) {
+                category = '硬盘';
+            }
 
             if (category && model && !isNaN(price)) {
                 if (!state.priceData.prices[category]) {
@@ -648,25 +666,27 @@ function processImportedData(data) {
     });
     
     state.pendingFile = null;
-    const fileInput = ($('#import-file-input'));
+    const fileInput = ($('#import-file-input') as HTMLInputElement);
     if(fileInput) fileInput.value = '';
-    const fileNameDisplay = ($('#file-name-display'));
+    const fileNameDisplay = ($('#file-name-display') as HTMLElement);
     if(fileNameDisplay) fileNameDisplay.textContent = '未选择文件';
     render();
 }
 
 function addEventListeners() {
     appContainer.addEventListener('click', (e) => {
-        const target = e.target;
+        const target = e.target as HTMLElement;
         if (!target) return;
         
         const button = target.closest('button');
-        const row = target.closest('tr');
-        const tierRow = target.closest('.tier-row');
-        const marginRow = target.closest('.margin-option-row');
-        const overlay = target.closest('.modal-overlay');
+        // FIX: Cast element from closest() to HTMLElement to access dataset property.
+        const row = target.closest('tr') as HTMLElement;
+        // FIX: Cast element from closest() to HTMLElement to access dataset property.
+        const tierRow = target.closest('.tier-row') as HTMLElement;
+        // FIX: Cast element from closest() to HTMLElement to access dataset property.
+        const marginRow = target.closest('.margin-option-row') as HTMLElement;
 
-        if (overlay && (overlay.id === 'modal-overlay' || overlay.id === 'custom-modal-overlay')) {
+        if (target.id === 'modal-overlay' || target.id === 'custom-modal-overlay') {
              state.showLoginModal = false;
              state.showCustomModal = false;
              state.loginError = null;
@@ -752,10 +772,10 @@ function addEventListeners() {
                 document.body.removeChild(link);
             }
         } else if (button && button.id === 'quick-add-btn') {
-            let category = $('#quick-add-category').value;
-            if (category === '--new--') category = $('#quick-add-new-category').value.trim();
-            const model = $('#quick-add-model').value.trim();
-            const price = parseFloat($('#quick-add-price').value);
+            let category = ($('#quick-add-category') as HTMLSelectElement).value;
+            if (category === '--new--') category = ($('#quick-add-new-category') as HTMLInputElement).value.trim();
+            const model = ($('#quick-add-model') as HTMLInputElement).value.trim();
+            const price = parseFloat(($('#quick-add-price') as HTMLInputElement).value);
             if (category && model && !isNaN(price)) {
                 if (!state.priceData.prices[category]) state.priceData.prices[category] = {};
                 state.priceData.prices[category][model] = price;
@@ -766,7 +786,7 @@ function addEventListeners() {
             }
         } else if (button && button.classList.contains('admin-save-item-btn') && row) {
             const { category, model } = row.dataset;
-            const newPrice = parseFloat(row.querySelector('.price-input').value);
+            const newPrice = parseFloat((row.querySelector('.price-input') as HTMLInputElement).value);
             if (!isNaN(newPrice)) {
                 state.priceData.prices[category][model] = newPrice;
                 updateTimestamp();
@@ -819,8 +839,7 @@ function addEventListeners() {
                 if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
                     reader.onload = (e) => {
                         try {
-                            // FIX: Add a type guard to ensure e.target.result is an ArrayBuffer, resolving a TypeScript error.
-                            if (e.target.result instanceof ArrayBuffer) {
+                            if (e.target && e.target.result instanceof ArrayBuffer) {
                                 const data = new Uint8Array(e.target.result);
                                 const workbook = XLSX.read(data, { type: 'array' });
                                 const firstSheetName = workbook.SheetNames[0];
@@ -837,7 +856,7 @@ function addEventListeners() {
                     reader.readAsArrayBuffer(file);
                 } else {
                     reader.onload = (e) => {
-                        const text = e.target.result;
+                        const text = e.target && e.target.result;
                         if (typeof text !== 'string') {
                             showModal({ title: '导入失败', message: '文件读取失败，内容格式不正确。' });
                             return;
@@ -855,9 +874,11 @@ function addEventListeners() {
     });
 
     appContainer.addEventListener('input', (e) => {
-        const { target } = e;
-        const row = target.closest('tr');
-        const tierRow = target.closest('.tier-row');
+        const target = e.target as HTMLInputElement;
+        // FIX: Cast element from closest() to HTMLElement to access dataset property.
+        const row = target.closest('tr') as HTMLElement;
+        // FIX: Cast element from closest() to HTMLElement to access dataset property.
+        const tierRow = target.closest('.tier-row') as HTMLElement;
         
         if (target.id === 'new-category-input') { state.newCategory = target.value; return; }
         if (target.id === 'admin-search-input') { state.adminSearchTerm = target.value; render(); return; }
@@ -887,21 +908,23 @@ function addEventListeners() {
     });
     
     appContainer.addEventListener('change', (e) => {
-        const { target } = e;
-        const row = target.closest('tr');
-        const marginRow = target.closest('.margin-option-row');
+        const target = e.target as HTMLInputElement | HTMLSelectElement;
+        // FIX: Cast element from closest() to HTMLElement to access dataset property.
+        const row = target.closest('tr') as HTMLElement;
+        // FIX: Cast element from closest() to HTMLElement to access dataset property.
+        const marginRow = target.closest('.margin-option-row') as HTMLElement;
 
-        if (target.id === 'import-file-input') { handleFileSelect(e); return; }
+        if (target.id === 'import-file-input') { handleFileSelect(e as unknown as Event); return; }
         
         if (target.classList.contains('margin-default-radio')) {
-            state.priceData.settings.margin = Number(target.value);
+            state.priceData.settings.margin = Number((target as HTMLInputElement).value);
         } else if (marginRow && (target.classList.contains('margin-label-input') || target.classList.contains('margin-value-input'))) {
             const index = parseInt(marginRow.dataset.index, 10);
             const option = state.priceData.marginOptions[index];
             const oldValue = option.value;
             
-            option.label = marginRow.querySelector('.margin-label-input').value;
-            const newValue = parseFloat(marginRow.querySelector('.margin-value-input').value);
+            option.label = (marginRow.querySelector('.margin-label-input') as HTMLInputElement).value;
+            const newValue = parseFloat((marginRow.querySelector('.margin-value-input') as HTMLInputElement).value);
             option.value = isNaN(newValue) ? 0 : newValue;
 
             if (state.priceData.settings.margin === oldValue) {
@@ -909,17 +932,17 @@ function addEventListeners() {
             }
             render();
         } else if (target.id === 'quick-add-category') {
-            $('#quick-add-new-category').style.display = target.value === '--new--' ? 'block' : 'none';
+            ($('#quick-add-new-category') as HTMLElement).style.display = (target as HTMLSelectElement).value === '--new--' ? 'block' : 'none';
         } else if (row && row.dataset.category) {
             const category = row.dataset.category;
-            if (target.classList.contains('model-select')) { state.selection[category].model = target.value; render(); }
+            if (target.classList.contains('model-select')) { state.selection[category].model = (target as HTMLSelectElement).value; render(); }
         } else if (row && row.dataset.customId) {
             const item = state.customItems.find(i => i.id === Number(row.dataset.customId));
-            if (item && target.classList.contains('custom-model-select')) { item.model = target.value; render(); }
+            if (item && target.classList.contains('custom-model-select')) { item.model = (target as HTMLSelectElement).value; render(); }
         } else if (target.id === 'discount-select') {
-            state.discountRate = Number(target.value); render();
+            state.discountRate = Number((target as HTMLSelectElement).value); render();
         } else if (target.id === 'margin-select') {
-            state.selectedMargin = Number(target.value); render();
+            state.selectedMargin = Number((target as HTMLSelectElement).value); render();
         }
     });
 
