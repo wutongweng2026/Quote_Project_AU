@@ -257,7 +257,7 @@ function renderLoginView() {
                         </div>
                     ` : ''}
                     <div class="auth-input-group">
-                        <label for="email">用户名</label>
+                        <label for="email">${isSignIn ? '用户名' : '邮箱'}</label>
                         <input 
                             type="${isSignIn ? 'text' : 'email'}" 
                             id="email" 
@@ -872,9 +872,19 @@ async function handleAuthAction(e: Event) {
     e.preventDefault();
 
     const emailInput = ($('#email') as HTMLInputElement);
+    // FIX: Corrected typo from `$$` to `$` to use the defined querySelector helper.
     const passwordInput = ($('#password') as HTMLInputElement);
     const identifier = emailInput.value.trim();
     const password = passwordInput.value.trim();
+    
+    let full_name = '';
+    let phone = '';
+    if (state.loginView === 'signUp') {
+        const fullNameInput = ($('#full_name') as HTMLInputElement);
+        const phoneInput = ($('#phone') as HTMLInputElement);
+        full_name = fullNameInput.value.trim();
+        phone = phoneInput.value.trim();
+    }
     
     if (state.loginView === 'signIn' && (!identifier || !password)) {
         state.authError = '用户名和密码不能为空。';
@@ -923,12 +933,7 @@ async function handleAuthAction(e: Event) {
                     await supabaseClient.from('login_logs').insert({ user_id: data.user.id, email: data.user.email });
                 }
             }
-        } else { 
-            const fullNameInput = ($('#full_name') as HTMLInputElement);
-            const phoneInput = ($('#phone') as HTMLInputElement);
-            const full_name = fullNameInput.value.trim();
-            const phone = phoneInput.value.trim();
-
+        } else { // signUp
             if (!full_name || !phone) {
                 throw new Error("姓名和手机号不能为空");
             }
@@ -1221,6 +1226,7 @@ function addEventListeners() {
                 document.body.removeChild(link);
             }
         } else if (button && button.id === 'quick-add-btn') {
+            // FIX: Corrected typo from `$$` to `$` to use the defined querySelector helper.
             const categoryInput = ($('#quick-add-category-input') as HTMLInputElement);
             const modelInput = ($('#quick-add-model') as HTMLInputElement);
             const priceInput = ($('#quick-add-price') as HTMLInputElement);
