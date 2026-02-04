@@ -1,5 +1,4 @@
 
-
 // LOGIN FUNCTIONALITY COMPLETELY REMOVED. This app now loads directly into the quote tool.
 
 // --- TYPES ---
@@ -63,6 +62,33 @@ const PRICE_DATA: PriceData = {
 
 const CONFIG_ROWS = ['主机', '内存', '硬盘1', '硬盘2', '显卡', '电源', '显示器'];
 declare var XLSX: any;
+const STORAGE_KEY = 'quickQuotePriceData';
+
+// --- DATA & STORAGE ---
+function loadPriceData(): PriceData {
+    const savedDataJSON = localStorage.getItem(STORAGE_KEY);
+    if (savedDataJSON) {
+        try {
+            const savedData = JSON.parse(savedDataJSON);
+            if (savedData.prices && savedData.tieredDiscounts && savedData.markupPoints) {
+                return savedData;
+            }
+        } catch (e) {
+            console.error("Failed to parse saved price data, falling back to default.", e);
+        }
+    }
+    const defaultData = JSON.parse(JSON.stringify(PRICE_DATA));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultData));
+    return defaultData;
+}
+
+function savePriceData() {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.priceData));
+    } catch (e) {
+        console.error("Failed to save price data to localStorage", e);
+    }
+}
 
 // --- STATE MANAGEMENT ---
 const getInitialSelection = (): SelectionState => ({
@@ -75,14 +101,16 @@ const getInitialSelection = (): SelectionState => ({
     '显示器': { model: '', quantity: 1 }
 });
 
+const initialPriceData = loadPriceData();
+
 const state: AppState = {
-    priceData: JSON.parse(JSON.stringify(PRICE_DATA)), // Deep copy to allow modification
+    priceData: initialPriceData,
     view: 'quote',
     selection: getInitialSelection(),
     customItems: [],
     newCategory: '',
     specialDiscount: 0,
-    markupPoints: PRICE_DATA.markupPoints[0]?.id || 0,
+    markupPoints: initialPriceData.markupPoints[0]?.id || 0,
     adminSearchTerm: '',
     showCustomModal: false,
     customModal: {
@@ -693,6 +721,7 @@ function addEventListeners() {
             const performAddOrUpdate = () => {
                 if (!state.priceData.prices[category]) state.priceData.prices[category] = {};
                 state.priceData.prices[category][model] = price;
+                savePriceData();
                 
                 categoryInput.value = '';
                 modelInput.value = '';
@@ -718,6 +747,7 @@ function addEventListeners() {
             if (category && model && !isNaN(newPrice)) {
                 if (state.priceData.prices[category]) {
                     state.priceData.prices[category][model] = newPrice;
+                    savePriceData();
                     button.style.backgroundColor = '#16a34a';
                     setTimeout(() => { button.style.backgroundColor = ''; }, 1000);
                 }
@@ -735,6 +765,7 @@ function addEventListeners() {
                         if(state.priceData.prices[category]) {
                             delete state.priceData.prices[category][model];
                             if (Object.keys(state.priceData.prices[category]).length === 0) delete state.priceData.prices[category];
+                            savePriceData();
                             render();
                         }
                     }
@@ -744,14 +775,17 @@ function addEventListeners() {
             const newTier = { id: Date.now(), threshold: 0, rate: 0.98 };
             state.priceData.tieredDiscounts.push(newTier);
             state.priceData.tieredDiscounts.sort((a,b) => a.threshold - b.threshold);
+            savePriceData();
             render();
         } else if (button && button.classList.contains('remove-tier-btn')) {
             const tierId = Number(button.dataset.id);
             state.priceData.tieredDiscounts = state.priceData.tieredDiscounts.filter(t => t.id !== tierId);
+            savePriceData();
             render();
         } else if (button && button.id === 'add-markup-point-btn') {
             const newPoint = { id: Date.now(), alias: '', value: 0 };
             state.priceData.markupPoints.push(newPoint);
+            savePriceData();
             render();
         } else if (button && button.classList.contains('remove-markup-point-btn')) {
             const pointId = Number(button.dataset.id);
@@ -761,6 +795,7 @@ function addEventListeners() {
             } else if (state.priceData.markupPoints.length === 0) {
                 state.markupPoints = 0;
             }
+            savePriceData();
             render();
         }
 
@@ -783,6 +818,7 @@ function addEventListeners() {
                 } else if (target.classList.contains('tier-rate-input')) {
                     tier.rate = parseFloat(target.value) || 0;
                 }
+                savePriceData();
             }
             return;
         }
@@ -797,6 +833,7 @@ function addEventListeners() {
                 } else if (target.classList.contains('markup-value-input')) {
                     point.value = parseInt(target.value, 10) || 0;
                 }
+                savePriceData();
             }
             return;
         }
@@ -826,7 +863,6 @@ function addEventListeners() {
         if (row && row.dataset.category && !row.dataset.model) {
             const category = row.dataset.category;
             if (target.classList.contains('quantity-input')) {
-// FIX: Separated state update and render call to new lines to fix "expression is not callable" error and improve readability.
                 state.selection[category].quantity = Math.max(0, parseInt(target.value, 10) || 0);
                 render();
             }
