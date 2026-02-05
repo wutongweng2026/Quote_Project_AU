@@ -1,3 +1,4 @@
+
 import { supabase, state } from './state';
 import { renderApp, showModal } from './ui';
 import { addEventListeners } from './logic';
@@ -161,7 +162,6 @@ supabase.auth.onAuthStateChange(async (event, session) => {
             console.error("Profile load error:", error);
             state.currentUser = null;
             state.appStatus = 'error';
-            // ... handle profile errors (already implemented)
             renderApp();
             return;
         }
@@ -182,26 +182,23 @@ supabase.auth.onAuthStateChange(async (event, session) => {
             
             state.showCustomModal = false;
 
-            // SUCCESSFUL LOGIN: Now and only now, load the heavy data.
+            // SUCCESSFUL LOGIN: Start loading data (using cache where possible)
             const loadedSuccessfully = await loadAllData(); 
 
             if (loadedSuccessfully) {
                 state.currentUser = { ...profile, auth: session.user };
                 if (profile.role === 'admin') {
-                    // Admins get extra profile list for management
                     const { data: allProfiles } = await supabase.from('profiles').select('*');
                     state.profiles = allProfiles || [profile];
-                    // Also check if DB needs initial seed if data is totally empty
                     if (state.priceData.items.length === 0) {
                         await seedDatabaseIfNeeded();
-                        await loadAllData(); // Re-load after seeding
+                        await loadAllData();
                     }
                 } else {
                     state.profiles = [profile];
                 }
                 state.view = 'quote';
                 
-                // Background task: log login - using then() to avoid catch/any TS issues
                 supabase.from('login_logs').insert({
                     user_id: profile.id,
                     user_name: profile.full_name
@@ -211,19 +208,18 @@ supabase.auth.onAuthStateChange(async (event, session) => {
             }
         }
     } else {
-        // NO SESSION: Show login view immediately
+        // NO SESSION: Immediately show login view, DO NOT load data.
         state.appStatus = 'ready';
         state.currentUser = null;
         state.profiles = [];
         state.view = 'login';
+        renderApp();
     }
-    
-    renderApp();
 });
 
 
 (async () => {
     addEventListeners();
-    // Check session on start, auth listener will handle the result
+    // 检查 session，auth.onAuthStateChange 会接管后续逻辑
     supabase.auth.getSession();
 })();
