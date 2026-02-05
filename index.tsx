@@ -140,8 +140,8 @@ function renderLoginView() {
                 <div id="login-error" class="auth-error" style="display: none;"></div>
                 <form id="login-form">
                     <div class="auth-input-group">
-                        <label for="email">邮箱</label>
-                        <input type="email" id="email" name="email" required autocomplete="email">
+                        <label for="username">用户名</label>
+                        <input type="text" id="username" name="username" required autocomplete="username">
                     </div>
                     <div class="auth-input-group">
                         <label for="password">密码</label>
@@ -551,7 +551,7 @@ function addEventListeners() {
         const target = e.target as HTMLFormElement;
 
         if (target.id === 'login-form') {
-            const email = (target.elements.namedItem('email') as HTMLInputElement).value;
+            const username = (target.elements.namedItem('username') as HTMLInputElement).value;
             const password = (target.elements.namedItem('password') as HTMLInputElement).value;
             const loginButton = target.querySelector('.auth-button') as HTMLButtonElement;
             const errorDiv = $('#login-error') as HTMLDivElement;
@@ -561,17 +561,34 @@ function addEventListeners() {
             errorDiv.style.display = 'none';
 
             try {
-                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-                if (error) throw error;
+                // Step 1: Get email from username via the RPC function we created.
+                const { data: email, error: rpcError } = await supabase.rpc('get_email_by_username', { p_username: username });
+
+                if (rpcError) {
+                    // Log the detailed error for debugging but show a generic message to the user.
+                    console.error('RPC Error:', rpcError.message);
+                    throw new Error('用户名或密码错误。');
+                }
+                if (!email) {
+                    // This happens if the username doesn't exist.
+                    throw new Error('用户名或密码错误。');
+                }
+
+                // Step 2: Sign in with the retrieved email and the provided password.
+                const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+                if (signInError) throw signInError; // This will trigger the catch block with the correct message.
                 if (!data.user) throw new Error('登录失败，请重试。');
                 
+                // On successful login, record it.
                 await supabase.from('login_logs').insert({
                     user_id: data.user.id,
                     user_agent: navigator.userAgent
                 });
 
             } catch (err: any) {
-                errorDiv.textContent = err.message || '登录时发生错误';
+                // For security, always show a generic error message.
+                // This prevents attackers from knowing if they guessed a username correctly.
+                errorDiv.textContent = '用户名或密码错误。';
                 errorDiv.style.display = 'block';
                 loginButton.disabled = false;
                 loginButton.innerHTML = '登录';
