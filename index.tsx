@@ -115,7 +115,7 @@ function render() {
     if (state.appStatus === 'loading') {
         html = `<div class="app-status-container"><div class="loading-spinner"></div><h2>正在连接...</h2></div>`;
     } else if (state.appStatus === 'error') {
-        html = `<div class="app-status-container"><h2>加载失败</h2><div class="error-details"><strong>错误信息:</strong> ${state.errorMessage}</div></div>`;
+        html = `<div class="app-status-container"><h2>加载失败</h2><div class="error-details">${state.errorMessage}</div></div>`;
     } else if (!state.currentUser) {
         html = renderLoginView();
     } else if (state.view === 'quote') {
