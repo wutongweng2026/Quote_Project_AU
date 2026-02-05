@@ -19,12 +19,11 @@ async function seedDatabaseIfNeeded() {
         }
 
         if (count !== null && count > 0) {
-            return; // Data exists, no need to seed
+            return;
         }
 
         console.log("Database appears to be empty. Seeding initial data...");
 
-        // 1. Seed Prices (quote_items)
         const itemsToInsert = Object.entries(seedDataObject.prices)
             .flatMap(([category, models]) =>
                 Object.entries(models).map(([model, price]) => ({
@@ -36,20 +35,11 @@ async function seedDatabaseIfNeeded() {
             );
 
         const { error: itemsError } = await supabase.from('quote_items').insert(itemsToInsert);
-        if (itemsError) {
-            console.error("Error seeding quote_items:", itemsError);
-        } else {
-            console.log(`Seeded ${itemsToInsert.length} items successfully.`);
-        }
+        if (itemsError) console.error("Error seeding quote_items:", itemsError);
 
-        // 2. Seed Discounts (quote_discounts)
         const discountsToInsert = seedDataObject.tieredDiscounts;
         const { error: discountsError } = await supabase.from('quote_discounts').insert(discountsToInsert);
-        if (discountsError) {
-            console.error("Error seeding quote_discounts:", discountsError);
-        } else {
-            console.log(`Seeded ${discountsToInsert.length} discounts successfully.`);
-        }
+        if (discountsError) console.error("Error seeding quote_discounts:", discountsError);
     } catch (error) {
         console.error("An unexpected error occurred during the seeding process:", error);
     }
@@ -61,16 +51,16 @@ async function loadAllData(): Promise<boolean> {
         state.appStatus = 'loading';
         renderApp();
 
-        // 1. Fetch the remote timestamp first (Fast metadata check)
+        // 1. 获取远程更新时间
         const { data: metaData, error: metaError } = await supabase
             .from('quote_meta')
             .select('value')
             .eq('key', 'last_prices_updated')
-            .single();
+            .maybeSingle();
         
         const remoteTimestamp = metaData?.value as string | null;
 
-        // 2. Check Local Cache
+        // 2. 检查本地缓存
         const cachedStr = localStorage.getItem(CACHE_KEY);
         if (cachedStr && remoteTimestamp) {
             try {
@@ -86,11 +76,12 @@ async function loadAllData(): Promise<boolean> {
                     return true;
                 }
             } catch (e) {
-                console.warn('Cache parsing failed, falling back to network.');
+                console.warn('Cache validation failed, clearing cache.');
+                localStorage.removeItem(CACHE_KEY);
             }
         }
 
-        // 3. Fallback: Fetch all data from database
+        // 3. 从数据库抓取
         console.log('🌐 Fetching fresh data from database...');
         const [
             { data: itemsData, error: itemsError },
@@ -122,7 +113,6 @@ async function loadAllData(): Promise<boolean> {
             state.markupPoints = state.priceData.markupPoints[0].id;
         }
 
-        // Update Cache
         try {
             localStorage.setItem(CACHE_KEY, JSON.stringify({
                 items: state.priceData.items,
@@ -131,25 +121,26 @@ async function loadAllData(): Promise<boolean> {
                 markups: state.priceData.markupPoints,
                 timestamp: remoteTimestamp
             }));
-        } catch (e) {
-            console.warn('Could not save data to local storage');
-        }
+        } catch (e) {}
 
         state.appStatus = 'ready';
         return true;
     } catch (error: any) {
+        console.error("LoadAllData Error:", error);
         state.appStatus = 'error';
-        state.errorMessage = `
-            <h3 style="color: #b91c1c; margin-top:0;">数据加载失败</h3>
-            <p>登录成功，但无法初始化报价数据。</p>
-            <p style="margin-top: 1rem;">原始错误: ${error.message}</p>`;
+        state.errorMessage = `数据加载失败: ${error.message || '未知错误'}`;
         return false;
     }
 }
 
 supabase.auth.onAuthStateChange(async (event, session) => {
-    console.log("Auth Event:", event);
     if (session?.user) {
+        // 关键点：立即进入加载状态，不要让用户在登录页面等待
+        if (state.view === 'login' || state.appStatus !== 'loading') {
+            state.appStatus = 'loading';
+            renderApp();
+        }
+
         const { data: profile, error } = await supabase
             .from('profiles')
             .select('id, full_name, role, is_approved')
@@ -159,7 +150,7 @@ supabase.auth.onAuthStateChange(async (event, session) => {
         if (error) {
             console.error("Profile load error:", error);
             state.currentUser = null;
-            state.appStatus = 'ready'; // Still ready to let them try login again
+            state.appStatus = 'ready';
             state.view = 'login';
             renderApp();
             return;
@@ -170,7 +161,7 @@ supabase.auth.onAuthStateChange(async (event, session) => {
                 state.appStatus = 'ready';
                 showModal({
                     title: '账户待审批',
-                    message: '您的账户正在等待管理员批准，请稍后再试。',
+                    message: '您的账户正在等待管理员批准。',
                     onConfirm: async () => {
                         state.showCustomModal = false;
                         await supabase.auth.signOut();
@@ -179,7 +170,6 @@ supabase.auth.onAuthStateChange(async (event, session) => {
                 return;
             }
             
-            state.showCustomModal = false;
             const loadedSuccessfully = await loadAllData(); 
 
             if (loadedSuccessfully) {
@@ -215,13 +205,7 @@ supabase.auth.onAuthStateChange(async (event, session) => {
 
 
 (async () => {
-    // 1. 初始化事件监听
     addEventListeners();
-    
-    // 2. 立即进行首次渲染（状态默认是 ready 和 login）
-    // 这将把 HTML 中的占位符替换为由 JavaScript 控制的交互式表单
-    renderApp();
-    
-    // 3. 异步获取会话状态，这会触发 onAuthStateChange
+    renderApp(); // 初始渲染登录框
     supabase.auth.getSession();
 })();
