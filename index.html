@@ -41,6 +41,7 @@
             border-radius: 12px;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
             overflow: hidden;
+            min-height: 500px;
         }
         .app-status-container {
             display: flex;
@@ -510,8 +511,8 @@
 <script type="importmap">
 {
   "imports": {
-    "vite": "https://esm.sh/vite@^7.3.1",
-    "path": "https://esm.sh/path@^0.12.7"
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.94.1",
+    "vite": "https://esm.sh/vite@^7.3.1"
   }
 }
 </script>
@@ -519,7 +520,10 @@
 <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="app">
-        <!-- App content will be rendered here -->
+        <div class="app-status-container">
+            <div class="loading-spinner"></div>
+            <h2>正在加载数据...</h2>
+        </div>
     </div>
     <script type="module" src="/index.tsx"></script>
 </body>
