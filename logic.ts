@@ -49,46 +49,29 @@ function handleSmartRecommendation() {
     }
 
     // 2. Prepare Category Constraints
-    // We map UI categories to specific matching logic
     const categoryConfig: Record<string, { stateKey: string, allowEmpty: boolean }> = {
         '主机': { stateKey: '主机', allowEmpty: false },
         '内存': { stateKey: '内存', allowEmpty: false },
-        '显卡': { stateKey: '显卡', allowEmpty: true }, // Optional if user doesn't ask, or integrated
+        '显卡': { stateKey: '显卡', allowEmpty: true }, 
         '电源': { stateKey: '电源', allowEmpty: false },
-        '显示器': { stateKey: '显示器', allowEmpty: true } // Strict optional
+        '显示器': { stateKey: '显示器', allowEmpty: true }
     };
 
     const candidates: Record<string, {model: string, price: number}[]> = {};
 
     // 3. Parse Standard Categories
     for (const [catName, config] of Object.entries(categoryConfig)) {
-        const allModels = Object.entries(state.priceData.prices[catName] || {}).map(([m, p]) => ({ model: m, price: p }));
+        // Use state.priceData.items to get full objects (including priority)
+        const allItemsInCategory = state.priceData.items.filter(i => i.category === catName);
         
         // Find models that match keywords in user input
-        // We split model names into tokens to find matches
-        const matches = allModels.filter(item => {
+        const matches = allItemsInCategory.filter(item => {
             const mName = item.model.toLowerCase();
-            // Tokens: "rtx4060", "8g", "i5-13400"
             const tokens = mName.split(/[\s\/+,-]+/).filter(t => t.length > 1);
             
-            // Check if any token exists in user input
-            // But be careful: "8g" matches both RAM and GPU.
-            // Context heuristic:
-            // - If cat is RAM, check for "ddr", "memory" or just rely on pure model match
-            // - If cat is GPU, check for "rtx", "gtx"
-            
-            // Simplified: Does the user input contain a substring that strongly identifies this model?
-            // e.g. "4060" matches "RTX4060"
-            
             return tokens.some(t => {
-                // Ignore common generic tokens that cause noise
                 if (['8g', '16g', '32g'].includes(t)) {
-                    // Only match size if we can attribute it to the category?
-                    // Hard to do without NLP. 
-                    // Let's rely on specific model keywords first.
-                    if (catName === '显卡' && !userInput.includes('显卡') && !userInput.includes('gpu')) return false; // Don't greedily match "8g" to GPU unless context exists? No, user typed "i5/8g/5060". "5060" is the key.
-                    
-                    // Actually, if user types "8g", they usually mean RAM.
+                    if (catName === '显卡' && !userInput.includes('显卡') && !userInput.includes('gpu')) return false; 
                     if (catName === '内存') return userInput.includes(t);
                     return false;
                 }
@@ -97,59 +80,65 @@ function handleSmartRecommendation() {
         });
 
         if (matches.length > 0) {
+            // User specified something specific (e.g. "4060"), strictly respect it
             candidates[config.stateKey] = matches;
         } else {
-            // No specific keyword found
+            // No specific keyword found (Generic demand)
             if (config.allowEmpty) {
-                // If optional, default to Empty. 
-                // Note: User said "Monitor should be empty if no keyword".
                 candidates[config.stateKey] = [{ model: '', price: 0 }];
             } else {
-                // If required, use all models to let Brute Force find best fit for budget
-                candidates[config.stateKey] = allModels;
+                // PRIORITIZATION LOGIC:
+                // If user didn't specify a model, check if we have "Priority" items in this category.
+                const priorityItems = allItemsInCategory.filter(i => i.is_priority);
+                
+                if (priorityItems.length > 0) {
+                    // If priorities exist, ONLY consider them (and cheapest among them will be picked by loop below)
+                    candidates[config.stateKey] = priorityItems;
+                } else {
+                    // If no priority items, consider ALL items (cheapest will be picked)
+                    candidates[config.stateKey] = allItemsInCategory;
+                }
             }
         }
     }
 
     // 4. Parse Hard Drives (Special for 1 or 2 drives)
-    const hddModels = Object.entries(state.priceData.prices['硬盘'] || {}).map(([m, p]) => ({ model: m, price: p }));
-    // Regex to find capacities like 512g, 1t, 2t
+    const hddItems = state.priceData.items.filter(i => i.category === '硬盘');
     const capacityRegex = /(512g?|1t|2t|4t|ssd|sata)/gi;
     const storageMatches = userInput.match(capacityRegex);
 
     if (storageMatches && storageMatches.length > 0) {
-        // We found storage requests.
-        // Dedup matches to avoid "1t" matching "1t" twice if typed once? 
-        // No, if user types "1t + 1t", they want two.
-        
-        // Drive 1 matches first keyword
-        candidates['硬盘1'] = hddModels.filter(m => m.model.toLowerCase().includes(storageMatches[0].toLowerCase().replace('g','')));
+        // Specific storage requested
+        candidates['硬盘1'] = hddItems.filter(m => m.model.toLowerCase().includes(storageMatches[0].toLowerCase().replace('g','')));
         
         if (storageMatches.length > 1) {
-            // Drive 2 matches second keyword
-            candidates['硬盘2'] = hddModels.filter(m => m.model.toLowerCase().includes(storageMatches[1].toLowerCase().replace('g','')));
+            candidates['硬盘2'] = hddItems.filter(m => m.model.toLowerCase().includes(storageMatches[1].toLowerCase().replace('g','')));
         } else {
-            // Only 1 drive specified
             candidates['硬盘2'] = [{ model: '', price: 0 }];
         }
     } else {
-        // No storage specified. Default: Pick generic for Drive 1, Empty for Drive 2
-        candidates['硬盘1'] = hddModels;
+        // Generic storage demand
+        // Check priority for Hard Drive 1
+        const priorityHdds = hddItems.filter(i => i.is_priority);
+        if (priorityHdds.length > 0) {
+            candidates['硬盘1'] = priorityHdds;
+        } else {
+            candidates['硬盘1'] = hddItems;
+        }
         candidates['硬盘2'] = [{ model: '', price: 0 }];
     }
     
     // Safety check for empty lists
-    if (!candidates['硬盘1'] || candidates['硬盘1'].length === 0) candidates['硬盘1'] = hddModels;
+    if (!candidates['硬盘1'] || candidates['硬盘1'].length === 0) candidates['硬盘1'] = hddItems;
     if (!candidates['硬盘2'] || candidates['硬盘2'].length === 0) candidates['硬盘2'] = [{ model: '', price: 0 }];
 
 
     // 5. Brute Force Best Combination
     let bestCombo: Record<string, string> | null = null;
     let minDiff = Infinity; // For budget mode: distance to budget. For cheapest mode: total price.
-    const targetBudget = budget > 0 ? budget : 0; 
-    const mode = budget > 0 ? 'budget' : 'cheapest';
-
-    // Optimization: Pre-sort to try cheaper items first?
+    const budgetMode = budget > 0;
+    
+    // Convert all candidates to simple objects for loop to keep it clean
     const hosts = candidates['主机'] || [];
     const rams = candidates['内存'] || [];
     const hdds1 = candidates['硬盘1'] || [];
@@ -158,7 +147,7 @@ function handleSmartRecommendation() {
     const psus = candidates['电源'] || [];
     const monitors = candidates['显示器'] || [];
 
-    // PERFORMANCE OPTIMIZATION: Hoist partial price sums to reduce inner loop arithmetic
+    // PERFORMANCE OPTIMIZATION: Hoist partial price sums
     for (const h of hosts) {
         const p1 = h.price;
         for (const r of rams) {
@@ -175,10 +164,10 @@ function handleSmartRecommendation() {
                                 // Final Sum
                                 const currentPrice = p6 + m.price;
 
-                                if (mode === 'budget') {
-                                    const diff = Math.abs(currentPrice - targetBudget);
+                                if (budgetMode) {
+                                    const diff = Math.abs(currentPrice - budget);
                                     if (diff < minDiff) {
-                                        if (currentPrice > targetBudget + 500) continue; // Soft cap
+                                        if (currentPrice > budget + 500) continue; // Soft cap
                                         minDiff = diff;
                                         bestCombo = {
                                             '主机': h.model, '内存': r.model,
@@ -188,7 +177,7 @@ function handleSmartRecommendation() {
                                         };
                                     }
                                 } else {
-                                    // Cheapest valid mode
+                                    // Cheapest valid mode (Generic priority already filtered the list, so this picks cheapest priority)
                                     if (currentPrice < minDiff) {
                                         minDiff = currentPrice;
                                         bestCombo = {
@@ -329,8 +318,9 @@ export function addEventListeners() {
             }
 
             await withButtonLoading(button, async () => {
+                 // Include default is_priority: false
                  const { error } = await supabase.from('quote_items').upsert(
-                    { category, model, price }, { onConflict: 'category,model' }
+                    { category, model, price, is_priority: false }, { onConflict: 'category,model' }
                  );
                  if (error) {
                     showModal({ title: '添加失败', message: `无法添加配件，请检查数据库权限设置(RLS)。\n错误: ${error.message}` });
@@ -338,6 +328,16 @@ export function addEventListeners() {
                  }
                  if (!state.priceData.prices[category]) state.priceData.prices[category] = {};
                  state.priceData.prices[category][model] = price;
+                 
+                 // Update items array (fetch latest or push manually if valid)
+                 // Re-fetching is safer to get ID and structure
+                 const { data: newItem } = await supabase.from('quote_items').select('*').match({category, model}).single();
+                 if (newItem) {
+                     const existingIdx = state.priceData.items.findIndex(i => i.category === category && i.model === model);
+                     if (existingIdx >= 0) state.priceData.items[existingIdx] = newItem;
+                     else state.priceData.items.push(newItem);
+                 }
+                 
                  await updateLastUpdatedTimestamp();
                  renderApp();
                  target.reset();
@@ -371,7 +371,34 @@ export function addEventListeners() {
         }
 
         const button = target.closest('button');
-        if (!button) return;
+        if (!button) {
+            // Check for Checkbox Click here (outside of button block)
+             if (target.matches('.priority-checkbox')) {
+                const checkbox = target as HTMLInputElement;
+                const row = checkbox.closest('tr');
+                const id = row?.dataset.id ? parseInt(row.dataset.id) : null;
+                
+                if (id) {
+                    setSyncStatus('saving');
+                    const isPriority = checkbox.checked;
+                    const { error } = await supabase.from('quote_items').update({ is_priority: isPriority }).eq('id', id);
+                    
+                    if (error) {
+                        setSyncStatus('error');
+                        console.error("Failed to update priority:", error);
+                        // Revert checkbox if failed
+                        checkbox.checked = !isPriority;
+                        showModal({ title: '更新失败', message: '无法更新优先推荐状态。请确保数据库表中存在 "is_priority" 列。\n错误: ' + error.message });
+                    } else {
+                        setSyncStatus('saved');
+                        // Update local state
+                        const item = state.priceData.items.find(i => i.id === id);
+                        if (item) item.is_priority = isPriority;
+                    }
+                }
+            }
+            return;
+        }
         
         let needsRender = false;
 
@@ -414,13 +441,12 @@ export function addEventListeners() {
                     renderApp(); 
                     
                     try {
-                        // Strategy: Create a TEMPORARY, IN-MEMORY Supabase client with NO storage persistence.
                         const tempClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
                             auth: {
                                 persistSession: false, 
                                 autoRefreshToken: false,
                                 detectSessionInUrl: false,
-                                storage: { // Dummy storage to strictly prevent localStorage access
+                                storage: { 
                                     getItem: () => null,
                                     setItem: () => {},
                                     removeItem: () => {},
@@ -430,7 +456,6 @@ export function addEventListeners() {
 
                         const fakeEmail = `user-${Date.now()}-${Math.floor(Math.random()*1000)}@quotesystem.local`;
 
-                        // 1. Sign up user using the isolated temp client
                         const { data: signUpData, error: signUpError } = await tempClient.auth.signUp({
                             email: fakeEmail,
                             password: newPassword,
@@ -445,7 +470,6 @@ export function addEventListeners() {
                         if (signUpError) throw signUpError;
                         if (!signUpData.user) throw new Error("用户创建失败: 未返回用户数据。");
 
-                        // 2. Use the MAIN client (Admin) to insert the profile.
                         const newProfile = {
                             id: signUpData.user.id,
                             full_name: newUsername,
@@ -457,11 +481,6 @@ export function addEventListeners() {
 
                         if (profileError) {
                             console.error("Failed to upsert profile. Rolling back user creation...", profileError);
-                            
-                            // ROLLBACK STRATEGY: 
-                            // If profile creation fails (likely RLS), delete the Auth User to prevent "No Name" zombie users.
-                            // We use the 'delete_user' RPC we just fixed.
-                            // NOTE: Fallback to direct table delete if RPC is missing, as requested by user simplification.
                              await supabase.from('profiles').delete().eq('id', signUpData.user.id);
                             
                             if (profileError.message.includes('row-level security')) {
@@ -480,7 +499,6 @@ with check ( (select role from public.profiles where id = auth.uid()) = 'admin' 
                             }
                         }
 
-                        // 3. Success
                         state.profiles.push(newProfile);
                         
                         showModal({
@@ -538,13 +556,10 @@ with check ( (select role from public.profiles where id = auth.uid()) = 'admin' 
                     }
                     
                     try {
-                        // SIMPLIFIED DELETION: Just delete from the profiles table.
-                        // This relies on the "Admins can do everything" policy we set up earlier.
                         const { error } = await supabase.from('profiles').delete().eq('id', userId);
                         
                         if (error) throw error;
 
-                        // Success path
                         state.showCustomModal = false;
                         state.profiles = state.profiles.filter(p => p.id !== userId);
                         renderApp();
@@ -583,6 +598,8 @@ with check ( (select role from public.profiles where id = auth.uid()) = 'admin' 
                     } else {
                         state.showCustomModal = false;
                         if (state.priceData.prices[category]) delete state.priceData.prices[category][model];
+                        // Also remove from items array
+                        state.priceData.items = state.priceData.items.filter(i => !(i.category === category && i.model === model));
                         renderApp();
                     }
                 }
@@ -606,6 +623,10 @@ with check ( (select role from public.profiles where id = auth.uid()) = 'admin' 
                 if (state.priceData.prices[category]) {
                     state.priceData.prices[category][model] = newPrice;
                 }
+                 // Also update items array
+                const item = state.priceData.items.find(i => i.category === category && i.model === model);
+                if (item) item.price = newPrice;
+
                 await updateLastUpdatedTimestamp();
             });
         } else if (button.id === 'generate-quote-btn') {
@@ -693,7 +714,10 @@ with check ( (select role from public.profiles where id = auth.uid()) = 'admin' 
             const userId = row?.dataset.userId;
             const action = button.dataset.action;
             if (!userId || !action) return;
-            const newRole = action === 'grant' ? 'admin' : 'sales';
+            // NEW LOGIC: 'grant' now gives 'manager' role, NOT 'admin'.
+            // 'revoke' returns them to 'sales'.
+            const newRole = action === 'grant' ? 'manager' : 'sales';
+            
             const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
              if (!error) {
                  const profile = state.profiles.find(p => p.id === userId);
@@ -826,6 +850,7 @@ with check ( (select role from public.profiles where id = auth.uid()) = 'admin' 
                         category: String(row[categoryIndex]).trim(),
                         model: String(row[modelIndex]).trim(),
                         price: parseFloat(String(row[priceIndex])),
+                        is_priority: false // Default priority
                     })).filter(item => item.category && item.model && !isNaN(item.price));
 
                     if (itemsToUpsert.length === 0) throw new Error('未在文件中找到有效的数据行。');
@@ -839,11 +864,26 @@ with check ( (select role from public.profiles where id = auth.uid()) = 'admin' 
                             state.priceData.prices[item.category] = {};
                         }
                         state.priceData.prices[item.category][item.model] = item.price;
+                        
+                        // Sync with raw items array for admin view
+                        const existingIdx = state.priceData.items.findIndex(i => i.category === item.category && i.model === item.model);
+                        if (existingIdx >= 0) {
+                             state.priceData.items[existingIdx].price = item.price;
+                        } else {
+                            // Note: Real IDs are missing here until re-fetch, but fine for display momentarily
+                            // Best practice would be to reload data, but for now we push a partial object or reload
+                        }
                     });
                     
+                    // Reload data to ensure IDs and everything are consistent
                     await updateLastUpdatedTimestamp();
-                    showModal({ title: '导入成功', message: `成功导入/更新了 ${itemsToUpsert.length} 个配件。`});
-                    renderApp();
+                    showModal({ 
+                        title: '导入成功', 
+                        message: `成功导入/更新了 ${itemsToUpsert.length} 个配件。`,
+                        onConfirm: () => {
+                             window.location.reload(); // Simplest way to resync everything perfectly
+                        }
+                    });
 
                 } catch (err: any) {
                     showModal({ title: '导入失败', message: err.message, isDanger: true });

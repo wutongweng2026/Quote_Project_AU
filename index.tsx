@@ -2,7 +2,7 @@ import { supabase, state } from './state';
 import { renderApp, showModal } from './ui';
 import { addEventListeners } from './logic';
 import { seedDataObject } from './seedData';
-import type { DbProfile, Prices } from './types';
+import type { DbProfile, Prices, DbQuoteItem } from './types';
 
 async function seedDatabaseIfNeeded() {
     try {
@@ -28,6 +28,7 @@ async function seedDatabaseIfNeeded() {
                     category,
                     model,
                     price,
+                    is_priority: false
                 }))
             );
 
@@ -76,6 +77,10 @@ async function loadAllData(): Promise<boolean> {
             throw metaError;
         }
 
+        // Populate the raw items array (includes id, is_priority, etc.)
+        state.priceData.items = (itemsData as DbQuoteItem[]) || [];
+
+        // Build the fast lookup map for calculations
         state.priceData.prices = (itemsData || []).reduce((acc, item) => {
             if (!acc[item.category]) acc[item.category] = {};
             acc[item.category][item.model] = item.price;
@@ -129,7 +134,7 @@ supabase.auth.onAuthStateChange(async (event, session) => {
 -- 1. 创建安全检查函数 (绕过RLS)
 create or replace function public.is_admin()
 returns boolean language sql security definer set search_path = public
-as $$ select exists (select 1 from profiles where id = auth.uid() and role = 'admin'); $$;
+as $$ select exists (select 1 from profiles where id = auth.uid() and role in ('admin', 'manager')); $$;
 
 -- 2. 清理旧策略
 drop policy if exists "Admins can insert and update all profiles" on profiles;

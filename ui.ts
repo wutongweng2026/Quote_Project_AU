@@ -19,7 +19,7 @@ export function renderApp() {
         html = renderLoginView(); // Fallback to login if no user
     } else if (state.view === 'quote') {
         html = renderQuoteTool();
-    } else if (state.view === 'admin' && state.currentUser.role === 'admin') {
+    } else if (state.view === 'admin' && (state.currentUser.role === 'admin' || state.currentUser.role === 'manager')) {
         html = renderAdminPanel();
     } else if (state.view === 'userManagement' && state.currentUser.role === 'admin') {
         html = renderUserManagementPanel();
@@ -85,15 +85,18 @@ function renderQuoteTool() {
     const finalPriceVisibility = state.showFinalQuote ? 'visible' : 'hidden';
     const finalPriceOpacity = state.showFinalQuote ? '1' : '0';
 
+    const isAdmin = state.currentUser?.role === 'admin';
+    const isManager = state.currentUser?.role === 'manager';
+
     return `
         <div class="quoteContainer">
             <header class="quoteHeader">
                 <h1>产品报价系统 <span>v2.1 - 龙盛科技</span></h1>
                  <div class="header-actions">
                     <span class="update-timestamp">数据更新于: ${lastUpdatedDate}</span>
-                    ${state.currentUser?.role === 'admin' ? '<button class="admin-button" id="login-log-btn">登录日志</button>' : ''}
-                    ${state.currentUser?.role === 'admin' ? '<button class="admin-button" id="user-management-btn">用户管理</button>' : ''}
-                    ${state.currentUser?.role === 'admin' ? '<button class="admin-button" id="app-view-toggle-btn">后台管理</button>' : ''}
+                    ${isAdmin ? '<button class="admin-button" id="login-log-btn">登录日志</button>' : ''}
+                    ${isAdmin ? '<button class="admin-button" id="user-management-btn">用户管理</button>' : ''}
+                    ${(isAdmin || isManager) ? '<button class="admin-button" id="app-view-toggle-btn">后台管理</button>' : ''}
                     <button class="admin-button" id="logout-btn">退出</button>
                 </div>
             </header>
@@ -206,27 +209,33 @@ function renderAddCategoryRow() {
 
 export function renderAdminDataTableBody() {
     const searchTerm = (state.adminSearchTerm || '').toLowerCase();
-    const filteredPriceEntries = Object.entries(state.priceData.prices)
-        .map(([category, models]) => {
-            const filteredModels = Object.entries(models).filter(([model]) => category.toLowerCase().includes(searchTerm) || model.toLowerCase().includes(searchTerm));
-            return [category, Object.fromEntries(filteredModels)] as [string, typeof models];
-        }).filter(([, models]) => Object.keys(models).length > 0);
+    
+    // Sort items by category then model for display
+    const filteredItems = state.priceData.items.filter(item => 
+        item.category.toLowerCase().includes(searchTerm) || 
+        item.model.toLowerCase().includes(searchTerm)
+    ).sort((a, b) => {
+        if (a.category !== b.category) return a.category.localeCompare(b.category);
+        return a.model.localeCompare(b.model);
+    });
 
-    if (filteredPriceEntries.length === 0) {
-        return `<tr><td colspan="4" style="text-align:center;">未找到匹配项</td></tr>`;
+    if (filteredItems.length === 0) {
+        return `<tr><td colspan="5" style="text-align:center;">未找到匹配项</td></tr>`;
     }
 
-    return filteredPriceEntries.map(([category, models]) => 
-        Object.entries(models).map(([model, price]) => `
-            <tr data-category="${category}" data-model="${model}">
-                <td>${category}</td> <td>${model}</td>
-                <td><input type="number" class="price-input" value="${price}" /></td>
-                <td>
-                    <button class="admin-save-item-btn">保存</button>
-                    <button class="admin-delete-item-btn" data-category="${category}" data-model="${model}">删除</button>
-                </td>
-            </tr>`
-        ).join('')
+    return filteredItems.map(item => `
+        <tr data-id="${item.id}" data-category="${item.category}" data-model="${item.model}">
+            <td>${item.category}</td> 
+            <td>${item.model}</td>
+            <td><input type="number" class="price-input" value="${item.price}" /></td>
+            <td style="text-align: center;">
+                <input type="checkbox" class="priority-checkbox" ${item.is_priority ? 'checked' : ''} title="勾选后，智能推荐将优先选择此配件">
+            </td>
+            <td>
+                <button class="admin-save-item-btn">保存</button>
+                <button class="admin-delete-item-btn" data-category="${item.category}" data-model="${item.model}">删除</button>
+            </td>
+        </tr>`
     ).join('');
 }
 
@@ -303,7 +312,15 @@ function renderAdminPanel() {
                     <input type="search" id="admin-search-input" placeholder="输入型号或分类名称搜索..." value="${state.adminSearchTerm}" />
                     <div id="admin-data-table-container" style="max-height: 400px; overflow-y: auto;">
                         <table class="admin-data-table">
-                            <thead><tr><th>分类</th><th>型号</th><th>单价</th><th>操作</th></tr></thead>
+                            <thead>
+                                <tr>
+                                    <th>分类</th>
+                                    <th>型号</th>
+                                    <th>单价</th>
+                                    <th style="text-align: center; color: #ef4444;">优先推荐</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
                             <tbody>
                                 ${renderAdminDataTableBody()}
                             </tbody>
@@ -374,14 +391,20 @@ function renderUserManagementPanel() {
                             </tr>
                         </thead>
                         <tbody>
-                            ${state.profiles.map(profile => `
+                            ${state.profiles.map(profile => {
+                                let roleBadge = '';
+                                if (profile.role === 'admin') {
+                                    roleBadge = `<span class="status-badge" style="background-color: #bfdbfe; color: #1e40af;">管理员</span>`;
+                                } else if (profile.role === 'manager') {
+                                    roleBadge = `<span class="status-badge" style="background-color: #e9d5ff; color: #6b21a8;">后台管理</span>`;
+                                } else {
+                                    roleBadge = `<span class="status-badge" style="background-color: #e0e7ff; color: #3730a3;">销售</span>`;
+                                }
+                                
+                                return `
                                 <tr data-user-id="${profile.id}">
                                     <td>${profile.full_name || `无名氏 (${profile.id.substring(0, 6)})`}</td>
-                                     <td>
-                                        <span class="status-badge ${profile.role === 'admin' ? 'approved' : ''}" style="background-color: ${profile.role === 'admin' ? '#bfdbfe' : '#e0e7ff'}; color: ${profile.role === 'admin' ? '#1e40af' : '#3730a3'};">
-                                            ${profile.role === 'admin' ? '管理员' : '销售'}
-                                        </span>
-                                    </td>
+                                     <td>${roleBadge}</td>
                                     <td>
                                         <span class="status-badge ${profile.is_approved ? 'approved' : 'pending'}">
                                             ${profile.is_approved ? '已批准' : '待审批'}
@@ -391,7 +414,7 @@ function renderUserManagementPanel() {
                                         ${!profile.is_approved ? `<button class="approve-user-btn">批准</button>` : ''}
                                         ${profile.id !== state.currentUser?.id 
                                             ? `
-                                                ${profile.role === 'admin'
+                                                ${(profile.role === 'admin' || profile.role === 'manager')
                                                     ? `<button class="permission-toggle-btn" data-action="revoke">撤销后台权限</button>`
                                                     : `<button class="permission-toggle-btn" data-action="grant">授予后台权限</button>`
                                                 }
@@ -400,7 +423,8 @@ function renderUserManagementPanel() {
                                             : '<span style="color: var(--secondary-text-color); font-style: italic;">(当前用户)</span>'
                                         }
                                     </td>
-                                </tr>`).join('')}
+                                </tr>`;
+                            }).join('')}
                         </tbody>
                     </table>
                 </div>

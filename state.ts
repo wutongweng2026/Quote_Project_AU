@@ -31,7 +31,7 @@ export const getInitialSelection = (): SelectionState => ({
 export const state: AppState = {
     appStatus: 'loading', // Start as 'loading' to match initial HTML
     errorMessage: null,
-    priceData: { prices: {}, tieredDiscounts: [], markupPoints: [] },
+    priceData: { prices: {}, items: [], tieredDiscounts: [], markupPoints: [] },
     profiles: [],
     view: 'login',
     currentUser: null,
