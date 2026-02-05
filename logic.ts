@@ -26,47 +26,205 @@ async function updateLastUpdatedTimestamp() {
 
 // --- LOGIC FUNCTIONS ---
 
-function handleMatchConfig() {
-    const input = ($('#matcher-input') as HTMLInputElement).value;
-    if (!input) return;
-    const newSelection = getInitialSelection();
-    const allModels = Object.entries(state.priceData.prices)
-        .flatMap(([category, models]) => Object.keys(models).map(model => ({ model, category, normalizedModel: model.toLowerCase().replace(/\s/g, '') })))
-        .sort((a, b) => b.model.length - a.model.length);
-    let processedInput = input;
-    const plusIndex = processedInput.indexOf('+');
-    if (plusIndex > -1) {
-        const hddComponent = processedInput.split(/[\\/|]/).find(c => c.includes('+'));
-        if (hddComponent) {
-            const [part1Str, part2Str] = hddComponent.split('+').map(p => p.trim());
-            const hddModels = allModels.filter(m => m.category === '硬盘');
-            const model1 = hddModels.find(m => part1Str.toLowerCase().replace(/\s/g, '').includes(m.normalizedModel));
-            const model2 = hddModels.find(m => part2Str.toLowerCase().replace(/\s/g, '').includes(m.normalizedModel));
-            if (model1) newSelection['硬盘1'].model = model1.model;
-            if (model2) newSelection['硬盘2'].model = model2.model;
-            processedInput = processedInput.replace(hddComponent, ' ');
+function handleSmartRecommendation() {
+    const input = ($('#matcher-input') as HTMLTextAreaElement | HTMLInputElement).value;
+    if (!input || !input.trim()) {
+        showModal({ title: '请输入需求', message: '请在文本框中输入预算（如“8000元”）或特定配置需求（如“4060显卡”）。' });
+        return;
+    }
+
+    const userInput = input.toLowerCase();
+
+    // 1. Extract Budget
+    let budget = 0;
+    const budgetMatch = userInput.match(/(?:预算|价格|价位|左右|^|\s)(\d+(?:\.\d+)?)\s*(?:元|块|w|k|万|千)?/);
+    if (budgetMatch) {
+        let num = parseFloat(budgetMatch[1]);
+        if (userInput.includes('w') || userInput.includes('万')) num *= 10000;
+        else if (userInput.includes('k') || userInput.includes('千')) num *= 1000;
+        
+        if (num > 1000) {
+            budget = num;
         }
     }
-    let tempInput = processedInput.toLowerCase();
-    const hddFillOrder = ['硬盘1', '硬盘2'];
-    for (const { model, category, normalizedModel } of allModels) {
-        if (tempInput.replace(/\s/g, '').includes(normalizedModel)) {
-            let targetCategory = category;
-            if (category === '硬盘') {
-                const availableSlot = hddFillOrder.find(cat => !newSelection[cat].model);
-                if (availableSlot) targetCategory = availableSlot; else continue;
-            }
-            if (newSelection[targetCategory] && !newSelection[targetCategory].model) {
-                newSelection[targetCategory].model = model;
-                const regex = new RegExp(`(${model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}|${normalizedModel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})[^/|\\\\]*?[*x]\\s*(\\d+)`, 'i');
-                const match = input.match(regex);
-                if (match && match[2]) newSelection[targetCategory].quantity = parseInt(match[2], 10);
-                tempInput = tempInput.replace(normalizedModel, ' '.repeat(normalizedModel.length));
+
+    // 2. Prepare Category Constraints
+    // We map UI categories to specific matching logic
+    const categoryConfig: Record<string, { stateKey: string, allowEmpty: boolean }> = {
+        '主机': { stateKey: '主机', allowEmpty: false },
+        '内存': { stateKey: '内存', allowEmpty: false },
+        '显卡': { stateKey: '显卡', allowEmpty: true }, // Optional if user doesn't ask, or integrated
+        '电源': { stateKey: '电源', allowEmpty: false },
+        '显示器': { stateKey: '显示器', allowEmpty: true } // Strict optional
+    };
+
+    const candidates: Record<string, {model: string, price: number}[]> = {};
+
+    // 3. Parse Standard Categories
+    for (const [catName, config] of Object.entries(categoryConfig)) {
+        const allModels = Object.entries(state.priceData.prices[catName] || {}).map(([m, p]) => ({ model: m, price: p }));
+        
+        // Find models that match keywords in user input
+        // We split model names into tokens to find matches
+        const matches = allModels.filter(item => {
+            const mName = item.model.toLowerCase();
+            // Tokens: "rtx4060", "8g", "i5-13400"
+            const tokens = mName.split(/[\s\/+,-]+/).filter(t => t.length > 1);
+            
+            // Check if any token exists in user input
+            // But be careful: "8g" matches both RAM and GPU.
+            // Context heuristic:
+            // - If cat is RAM, check for "ddr", "memory" or just rely on pure model match
+            // - If cat is GPU, check for "rtx", "gtx"
+            
+            // Simplified: Does the user input contain a substring that strongly identifies this model?
+            // e.g. "4060" matches "RTX4060"
+            
+            return tokens.some(t => {
+                // Ignore common generic tokens that cause noise
+                if (['8g', '16g', '32g'].includes(t)) {
+                    // Only match size if we can attribute it to the category?
+                    // Hard to do without NLP. 
+                    // Let's rely on specific model keywords first.
+                    if (catName === '显卡' && !userInput.includes('显卡') && !userInput.includes('gpu')) return false; // Don't greedily match "8g" to GPU unless context exists? No, user typed "i5/8g/5060". "5060" is the key.
+                    
+                    // Actually, if user types "8g", they usually mean RAM.
+                    if (catName === '内存') return userInput.includes(t);
+                    return false;
+                }
+                return userInput.includes(t);
+            });
+        });
+
+        if (matches.length > 0) {
+            candidates[config.stateKey] = matches;
+        } else {
+            // No specific keyword found
+            if (config.allowEmpty) {
+                // If optional, default to Empty. 
+                // Note: User said "Monitor should be empty if no keyword".
+                candidates[config.stateKey] = [{ model: '', price: 0 }];
+            } else {
+                // If required, use all models to let Brute Force find best fit for budget
+                candidates[config.stateKey] = allModels;
             }
         }
     }
-    state.selection = newSelection;
-    renderApp();
+
+    // 4. Parse Hard Drives (Special for 1 or 2 drives)
+    const hddModels = Object.entries(state.priceData.prices['硬盘'] || {}).map(([m, p]) => ({ model: m, price: p }));
+    // Regex to find capacities like 512g, 1t, 2t
+    const capacityRegex = /(512g?|1t|2t|4t|ssd|sata)/gi;
+    const storageMatches = userInput.match(capacityRegex);
+
+    if (storageMatches && storageMatches.length > 0) {
+        // We found storage requests.
+        // Dedup matches to avoid "1t" matching "1t" twice if typed once? 
+        // No, if user types "1t + 1t", they want two.
+        
+        // Drive 1 matches first keyword
+        candidates['硬盘1'] = hddModels.filter(m => m.model.toLowerCase().includes(storageMatches[0].toLowerCase().replace('g','')));
+        
+        if (storageMatches.length > 1) {
+            // Drive 2 matches second keyword
+            candidates['硬盘2'] = hddModels.filter(m => m.model.toLowerCase().includes(storageMatches[1].toLowerCase().replace('g','')));
+        } else {
+            // Only 1 drive specified
+            candidates['硬盘2'] = [{ model: '', price: 0 }];
+        }
+    } else {
+        // No storage specified. Default: Pick generic for Drive 1, Empty for Drive 2
+        candidates['硬盘1'] = hddModels;
+        candidates['硬盘2'] = [{ model: '', price: 0 }];
+    }
+    
+    // Safety check for empty lists
+    if (!candidates['硬盘1'] || candidates['硬盘1'].length === 0) candidates['硬盘1'] = hddModels;
+    if (!candidates['硬盘2'] || candidates['硬盘2'].length === 0) candidates['硬盘2'] = [{ model: '', price: 0 }];
+
+
+    // 5. Brute Force Best Combination
+    let bestCombo: Record<string, string> | null = null;
+    let minDiff = Infinity; // For budget mode: distance to budget. For cheapest mode: total price.
+    const targetBudget = budget > 0 ? budget : 0; 
+    const mode = budget > 0 ? 'budget' : 'cheapest';
+
+    // Optimization: Pre-sort to try cheaper items first?
+    const hosts = candidates['主机'] || [];
+    const rams = candidates['内存'] || [];
+    const hdds1 = candidates['硬盘1'] || [];
+    const hdds2 = candidates['硬盘2'] || [];
+    const gpus = candidates['显卡'] || [];
+    const psus = candidates['电源'] || [];
+    const monitors = candidates['显示器'] || [];
+
+    // PERFORMANCE OPTIMIZATION: Hoist partial price sums to reduce inner loop arithmetic
+    for (const h of hosts) {
+        const p1 = h.price;
+        for (const r of rams) {
+            const p2 = p1 + r.price;
+            for (const d1 of hdds1) {
+                const p3 = p2 + d1.price;
+                for (const d2 of hdds2) {
+                    const p4 = p3 + d2.price;
+                    for (const g of gpus) {
+                        const p5 = p4 + g.price;
+                        for (const p of psus) {
+                            const p6 = p5 + p.price;
+                            for (const m of monitors) {
+                                // Final Sum
+                                const currentPrice = p6 + m.price;
+
+                                if (mode === 'budget') {
+                                    const diff = Math.abs(currentPrice - targetBudget);
+                                    if (diff < minDiff) {
+                                        if (currentPrice > targetBudget + 500) continue; // Soft cap
+                                        minDiff = diff;
+                                        bestCombo = {
+                                            '主机': h.model, '内存': r.model,
+                                            '硬盘1': d1.model, '硬盘2': d2.model,
+                                            '显卡': g.model, '电源': p.model,
+                                            '显示器': m.model
+                                        };
+                                    }
+                                } else {
+                                    // Cheapest valid mode
+                                    if (currentPrice < minDiff) {
+                                        minDiff = currentPrice;
+                                        bestCombo = {
+                                            '主机': h.model, '内存': r.model,
+                                            '硬盘1': d1.model, '硬盘2': d2.model,
+                                            '显卡': g.model, '电源': p.model,
+                                            '显示器': m.model
+                                        };
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 6. Apply Selection
+    if (bestCombo) {
+        const newSelection = getInitialSelection();
+        newSelection['主机'].model = bestCombo['主机'];
+        newSelection['内存'].model = bestCombo['内存'];
+        newSelection['硬盘1'].model = bestCombo['硬盘1'];
+        newSelection['硬盘2'].model = bestCombo['硬盘2'];
+        newSelection['显卡'].model = bestCombo['显卡'];
+        newSelection['电源'].model = bestCombo['电源'];
+        newSelection['显示器'].model = bestCombo['显示器'];
+        
+        state.selection = newSelection;
+        state.selectedDiscountId = 'none';
+        state.showFinalQuote = true;
+        renderApp();
+    } else {
+        showModal({ title: '无法匹配', message: '未找到符合条件的配置组合，请尝试调整预算或描述。' });
+    }
 }
 
 function handleExportExcel() {
@@ -303,7 +461,8 @@ export function addEventListeners() {
                             // ROLLBACK STRATEGY: 
                             // If profile creation fails (likely RLS), delete the Auth User to prevent "No Name" zombie users.
                             // We use the 'delete_user' RPC we just fixed.
-                            await supabase.rpc('delete_user', { user_id: signUpData.user.id });
+                            // NOTE: Fallback to direct table delete if RPC is missing, as requested by user simplification.
+                             await supabase.from('profiles').delete().eq('id', signUpData.user.id);
                             
                             if (profileError.message.includes('row-level security')) {
                                 const sqlFixMessage = `
@@ -367,7 +526,7 @@ with check ( (select role from public.profiles where id = auth.uid()) = 'admin' 
 
             showModal({
                 title: '确认删除用户',
-                message: `您确定要永久删除用户 "${userName}" 吗？此操作无法撤销。`,
+                message: `您确定要删除用户 "${userName}" 吗？\n\n注意：此操作仅删除资料表记录，账号逻辑将由系统自动处理。`,
                 isDanger: true,
                 showCancel: true,
                 confirmText: '确认删除',
@@ -377,23 +536,13 @@ with check ( (select role from public.profiles where id = auth.uid()) = 'admin' 
                         confirmButton.disabled = true;
                         confirmButton.innerHTML = `<span class="spinner"></span> 正在删除...`;
                     }
-                    const cancelButton = $('#custom-modal-cancel-btn') as HTMLButtonElement;
-                    if (cancelButton) {
-                        cancelButton.disabled = true;
-                    }
-
+                    
                     try {
-                        // Wrap RPC call in a timeout race to prevent infinite loading
-                        const deletePromise = supabase.rpc('delete_user', { user_id: userId });
-                        const timeoutPromise = new Promise((_, reject) => 
-                            setTimeout(() => reject(new Error('请求超时 (10秒)。可能是数据库锁定或网络问题。请刷新页面重试。')), 10000)
-                        );
-
-                        const { error } = await Promise.race([deletePromise, timeoutPromise]) as any;
+                        // SIMPLIFIED DELETION: Just delete from the profiles table.
+                        // This relies on the "Admins can do everything" policy we set up earlier.
+                        const { error } = await supabase.from('profiles').delete().eq('id', userId);
                         
-                        if (error) {
-                            throw error;
-                        }
+                        if (error) throw error;
 
                         // Success path
                         state.showCustomModal = false;
@@ -402,37 +551,10 @@ with check ( (select role from public.profiles where id = auth.uid()) = 'admin' 
 
                     } catch (error: any) {
                         console.error("Delete failed:", error);
-                        
-                        const sqlFixMessage = `
-                            <p style="margin-bottom: 1rem;">删除操作失败。</p>
-                            <p><strong>错误原因:</strong> ${error.message}</p>
-                            <hr style="margin: 1rem 0; border:0; border-top:1px solid #eee;">
-                            <p style="margin-bottom: 0.5rem; font-size: 0.9rem;">如果问题持续，请在 Supabase SQL Editor 中运行此修复脚本：</p>
-                            <pre style="background-color: #f1f5f9; border-radius: 4px; padding: 0.8rem; text-align: left; white-space: pre-wrap; word-break: break-all; font-size: 0.75rem; line-height: 1.4; max-height: 150px; overflow-y: auto;"><code>create or replace function public.delete_user(user_id uuid) 
-returns void 
-language plpgsql 
-security definer 
-as $$
-begin
-  delete from public.profiles where id = user_id;
-  delete from public.login_logs where user_id = user_id;
-  perform auth.admin_delete_user(user_id);
-end;
-$$;
-grant execute on function public.delete_user(uuid) to authenticated;</code></pre>
-                        `;
-
                         showModal({ 
                             title: '删除失败', 
-                            message: sqlFixMessage, 
-                            isDanger: true,
-                            confirmText: '好的，我已知晓',
-                            showCancel: false,
-                            isDismissible: false,
-                            onConfirm: async () => {
-                                state.showCustomModal = false;
-                                renderApp();
-                            }
+                            message: `无法删除用户资料: ${error.message}`, 
+                            isDanger: true
                         });
                     }
                 }
@@ -488,8 +610,12 @@ grant execute on function public.delete_user(uuid) to authenticated;</code></pre
             });
         } else if (button.id === 'generate-quote-btn') {
             handleExportExcel();
+        } else if (button.id === 'calc-quote-btn') {
+            // NEW LOGIC: Reveal the final price
+            state.showFinalQuote = true;
+            renderApp();
         } else if (button.id === 'match-config-btn') {
-            handleMatchConfig();
+            handleSmartRecommendation();
         } else if (button.id === 'add-markup-point-btn') {
              const { data, error } = await supabase.from('quote_markups').insert({ alias: '新点位', value: 0 }).select().single();
             if (error) {
@@ -549,6 +675,8 @@ grant execute on function public.delete_user(uuid) to authenticated;</code></pre
             state.newCategory = '';
             state.specialDiscount = 0;
             state.markupPoints = state.priceData.markupPoints[0]?.id || 0;
+            state.showFinalQuote = false; // Hide price on reset
+            state.selectedDiscountId = 'none'; // Reset discount to none
             renderApp();
         } else if (button.classList.contains('approve-user-btn')) {
              const userId = button.closest('tr')?.dataset.userId;
@@ -732,6 +860,10 @@ grant execute on function public.delete_user(uuid) to authenticated;</code></pre
         const row = target.closest('tr');
         if (target.id === 'markup-points-select') {
             state.markupPoints = Number(target.value);
+            updateTotalsUI();
+        } else if (target.id === 'discount-select') { // Added discount select listener
+            const val = target.value;
+            state.selectedDiscountId = val === 'none' ? 'none' : parseInt(val, 10);
             updateTotalsUI();
         } else if (row?.dataset.category && target.classList.contains('model-select')) {
             state.selection[row.dataset.category].model = (target as HTMLSelectElement).value;

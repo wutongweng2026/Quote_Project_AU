@@ -50,4 +50,6 @@ export const state: AppState = {
     lastUpdated: null,
     hasAttemptedDbFix: false,
     loginLogs: [],
+    showFinalQuote: false,
+    selectedDiscountId: 'none',
 };

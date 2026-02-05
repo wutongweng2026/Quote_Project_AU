@@ -81,10 +81,14 @@ function renderQuoteTool() {
     const finalConfigText = getFinalConfigText();
     const lastUpdatedDate = state.lastUpdated ? new Date(state.lastUpdated).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short'}) : '暂无记录';
     
+    // Visibility logic for the final price
+    const finalPriceVisibility = state.showFinalQuote ? 'visible' : 'hidden';
+    const finalPriceOpacity = state.showFinalQuote ? '1' : '0';
+
     return `
         <div class="quoteContainer">
             <header class="quoteHeader">
-                <h1>产品报价系统 <span>v2.0 - 龙盛科技</span></h1>
+                <h1>产品报价系统 <span>v2.1 - 龙盛科技</span></h1>
                  <div class="header-actions">
                     <span class="update-timestamp">数据更新于: ${lastUpdatedDate}</span>
                     ${state.currentUser?.role === 'admin' ? '<button class="admin-button" id="login-log-btn">登录日志</button>' : ''}
@@ -95,10 +99,10 @@ function renderQuoteTool() {
             </header>
             <main class="quoteBody">
                 <div class="product-matcher-section">
-                    <label for="matcher-input">产品匹配 (粘贴配置后点击按钮):</label>
+                    <label for="matcher-input" style="font-size: 1.1rem; color: var(--primary-color-hover);">💡 智能配置推荐:</label>
                     <div class="matcher-input-group">
-                        <input type="text" id="matcher-input" placeholder="例如: TSK-C3 I5-14500/8G DDR5 *2 / 512G SSD+2T SATA /RTX 5060 8G /500W">
-                        <button id="match-config-btn">匹配配置</button>
+                        <input type="text" id="matcher-input" placeholder="在此输入需求，例如：“推荐一款8000元左右的电脑” “i5/8G/5060显卡”" style="padding: 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); font-family: inherit; width: 100%; font-size: 1rem;">
+                        <button id="match-config-btn" style="height: auto; white-space: nowrap;">智能生成<br>配置方案</button>
                     </div>
                 </div>
                 <table class="config-table">
@@ -116,8 +120,15 @@ function renderQuoteTool() {
                 </div>
                 <div class="controls-grid">
                     <div class="control-group">
-                        <label>折扣:</label>
-                        <div class="discount-display">${totals.appliedDiscountLabel}</div>
+                        <label for="discount-select">折扣:</label>
+                        <select id="discount-select">
+                            <option value="none" ${state.selectedDiscountId === 'none' ? 'selected' : ''}>无折扣</option>
+                            ${state.priceData.tieredDiscounts.sort((a,b) => b.threshold - a.threshold).map(tier => `
+                                <option value="${tier.id}" ${state.selectedDiscountId === tier.id ? 'selected' : ''}>
+                                    ${tier.threshold > 0 ? `满 ${tier.threshold} 件 - ${tier.rate} 折` : `固定折扣 - ${tier.rate} 折`}
+                                </option>
+                            `).join('')}
+                        </select>
                     </div>
                     <div class="control-group">
                         <label for="markup-points-select">点位:</label>
@@ -132,13 +143,14 @@ function renderQuoteTool() {
                 </div>
             </main>
             <footer class="quoteFooter">
-                <div class="footer-buttons">
-                    <button class="reset-btn" id="reset-btn">重置</button>
-                    <button class="generate-btn" id="generate-quote-btn">导出Excel</button>
-                </div>
-                <div class="final-price-display">
+                <div class="final-price-display" style="text-align: left; visibility: ${finalPriceVisibility}; opacity: ${finalPriceOpacity}; transition: opacity 0.3s ease;">
                     <span>最终价格</span>
                     <strong>¥ ${totals.finalPrice.toFixed(2)}</strong>
+                </div>
+                <div class="footer-buttons">
+                    <button class="reset-btn" id="reset-btn">重置</button>
+                    <button id="generate-quote-btn" style="background-color: var(--secondary-color);">导出报价</button>
+                    <button id="calc-quote-btn" style="background-color: var(--primary-color);">生成报价</button>
                 </div>
             </footer>
         </div>
@@ -421,15 +433,18 @@ export function showModal(options: Partial<CustomModalState>) {
 export function updateTotalsUI() {
     const totals = calculateTotals();
     const finalPriceEl = $('.final-price-display strong');
-    const discountDisplayEl = $('.discount-display');
+    // REMOVED: const discountDisplayEl = $('.discount-display'); -> now is select
     const finalConfigEl = $('.final-config-display');
 
     if (finalPriceEl) {
         finalPriceEl.textContent = `¥ ${totals.finalPrice.toFixed(2)}`;
     }
-    if (discountDisplayEl) {
-        discountDisplayEl.textContent = totals.appliedDiscountLabel;
-    }
+    // Discount is now a Select input, usually doesn't need text content update unless "Automatic" changed label, 
+    // but calculating label is tricky with Select value logic. 
+    // We rely on renderApp for label updates or simple calc. 
+    // Ideally we shouldn't update the SELECT text while user is looking at it, but let's see.
+    // For now, removing the text update for discount display since it's an input.
+    
     if (finalConfigEl) {
         (finalConfigEl as HTMLTextAreaElement).value = getFinalConfigText() || '未选择配件';
     }

@@ -54,22 +54,25 @@ async function seedDatabaseIfNeeded() {
 
 async function loadAllData(): Promise<boolean> {
     try {
-        const { data: itemsData, error: itemsError } = await supabase.from('quote_items').select('*');
+        // PERFORMANCE OPTIMIZATION: Fetch all data in parallel instead of sequentially.
+        const [
+            { data: itemsData, error: itemsError },
+            { data: discountsData, error: discountsError },
+            { data: markupsData, error: markupsError },
+            { data: metaData, error: metaError }
+        ] = await Promise.all([
+            supabase.from('quote_items').select('*'),
+            supabase.from('quote_discounts').select('*'),
+            supabase.from('quote_markups').select('*'),
+            supabase.from('quote_meta').select('value').eq('key', 'last_prices_updated').single()
+        ]);
+
         if (itemsError) throw itemsError;
-
-        const { data: discountsData, error: discountsError } = await supabase.from('quote_discounts').select('*');
         if (discountsError) throw discountsError;
-
-        const { data: markupsData, error: markupsError } = await supabase.from('quote_markups').select('*');
         if (markupsError) throw markupsError;
         
-        const { data: metaData, error: metaError } = await supabase
-            .from('quote_meta')
-            .select('value')
-            .eq('key', 'last_prices_updated')
-            .single();
-
-        if (metaError && metaError.code !== 'PGRST116') { // Ignore 'range not found' error if key doesn't exist
+        // Handle metaError specifically (PGRST116 is 'row not found', which is acceptable)
+        if (metaError && metaError.code !== 'PGRST116') {
             throw metaError;
         }
 
@@ -83,7 +86,6 @@ async function loadAllData(): Promise<boolean> {
         state.priceData.markupPoints = markupsData || [];
         state.lastUpdated = metaData?.value as string | null;
 
-        
         if (state.priceData.markupPoints.length > 0 && state.markupPoints === 0) {
             state.markupPoints = state.priceData.markupPoints[0].id;
         }

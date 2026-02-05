@@ -62,4 +62,6 @@ export interface AppState {
     hasAttemptedDbFix: boolean;
     lastUpdated: string | null;
     loginLogs: DbLoginLog[];
+    showFinalQuote: boolean;
+    selectedDiscountId: number | 'none'; 
 }

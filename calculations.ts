@@ -20,15 +20,19 @@ export function calculateTotals() {
     }, 0);
     
     const costTotal = standardCost + customCost;
-    const totalQuantity = [...Object.values(state.selection), ...state.customItems].reduce((acc, { quantity }) => acc + quantity, 0);
-
-    const sortedTiers = [...(state.priceData.tieredDiscounts || [])].sort((a, b) => b.threshold - a.threshold);
+    
     let appliedRate = 1.0;
     let appliedDiscountLabel = '无折扣';
-    const applicableTier = sortedTiers.find(tier => tier.threshold > 0 && totalQuantity >= tier.threshold);
-    if (applicableTier) {
-        appliedRate = applicableTier.rate / 10;
-        appliedDiscountLabel = `满 ${applicableTier.threshold} 件, 打 ${applicableTier.rate} 折`;
+
+    if (state.selectedDiscountId !== 'none') {
+        // Manual Selection
+        const selectedTier = state.priceData.tieredDiscounts.find(t => t.id === state.selectedDiscountId);
+        if (selectedTier) {
+            appliedRate = selectedTier.rate / 10;
+            appliedDiscountLabel = selectedTier.threshold > 0 
+                ? `满 ${selectedTier.threshold} 件, 打 ${selectedTier.rate} 折`
+                : `固定折扣: ${selectedTier.rate} 折`;
+        }
     }
 
     const selectedMarkupPoint = state.priceData.markupPoints.find(p => p.id === state.markupPoints);
