@@ -164,14 +164,6 @@ export function addEventListeners() {
             const registerButton = target.querySelector('.auth-button') as HTMLButtonElement;
             const errorDiv = $('#register-error') as HTMLDivElement;
 
-            // --- Client-side validation ---
-            if (password.length < 8 || !/^(?=.*[A-Za-z])(?=.*\d).+$/.test(password)) {
-                errorDiv.textContent = '密码不符合要求。请确保密码至少8位，且包含字母和数字。';
-                errorDiv.style.display = 'block';
-                return; 
-            }
-            // --- End validation ---
-
             registerButton.disabled = true;
             registerButton.innerHTML = `<span class="spinner"></span> 正在注册`;
             errorDiv.style.display = 'none';
