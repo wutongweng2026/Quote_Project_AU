@@ -29,7 +29,7 @@ export const getInitialSelection = (): SelectionState => ({
 });
 
 export const state: AppState = {
-    appStatus: 'loading', // Start as 'loading' to match initial HTML
+    appStatus: 'ready', // Set to ready immediately so login view shows up fast
     errorMessage: null,
     priceData: { prices: {}, items: [], tieredDiscounts: [], markupPoints: [] },
     profiles: [],

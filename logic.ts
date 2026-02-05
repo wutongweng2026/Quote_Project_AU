@@ -7,6 +7,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config';
 
 declare var XLSX: any;
 const $ = (selector: string) => document.querySelector(selector);
+const CACHE_KEY = 'qqs_price_data_cache_v1';
 
 // --- HELPER FUNCTIONS ---
 
@@ -858,6 +859,9 @@ with check ( (select role from public.profiles where id = auth.uid()) = 'admin' 
                     const { error } = await supabase.from('quote_items').upsert(itemsToUpsert, { onConflict: 'category,model' });
                     if (error) throw error;
                     
+                    // Clear cache to force reload
+                    localStorage.removeItem(CACHE_KEY);
+
                     // Fix: Corrected typo 'agora' to 'category' and ensured correct object initialization.
                     itemsToUpsert.forEach(item => {
                         if (!state.priceData.prices[item.category]) {
@@ -871,7 +875,6 @@ with check ( (select role from public.profiles where id = auth.uid()) = 'admin' 
                              state.priceData.items[existingIdx].price = item.price;
                         } else {
                             // Note: Real IDs are missing here until re-fetch, but fine for display momentarily
-                            // Best practice would be to reload data, but for now we push a partial object or reload
                         }
                     });
                     
@@ -879,7 +882,7 @@ with check ( (select role from public.profiles where id = auth.uid()) = 'admin' 
                     await updateLastUpdatedTimestamp();
                     showModal({ 
                         title: '导入成功', 
-                        message: `成功导入/更新了 ${itemsToUpsert.length} 个配件。`,
+                        message: `成功导入/更新了 ${itemsToUpsert.length} 个配件。系统将刷新数据。`,
                         onConfirm: () => {
                              window.location.reload(); // Simplest way to resync everything perfectly
                         }
