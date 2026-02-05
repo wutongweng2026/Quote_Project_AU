@@ -76,6 +76,7 @@ function renderRegisterView() {
                     <div class="auth-input-group">
                         <label for="reg-password">密码</label>
                         <input type="password" id="reg-password" name="password" required autocomplete="new-password">
+                        <p style="font-size: 0.8rem; color: var(--secondary-text-color); margin: 0.25rem 0 0; font-weight: 400;">密码至少8位，且需包含字母和数字。</p>
                     </div>
                     <button type="submit" class="auth-button">注册</button>
                 </form>

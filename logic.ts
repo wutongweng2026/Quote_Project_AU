@@ -164,6 +164,14 @@ export function addEventListeners() {
             const registerButton = target.querySelector('.auth-button') as HTMLButtonElement;
             const errorDiv = $('#register-error') as HTMLDivElement;
 
+            // --- Client-side validation ---
+            if (password.length < 8 || !/^(?=.*[A-Za-z])(?=.*\d).+$/.test(password)) {
+                errorDiv.textContent = '密码不符合要求。请确保密码至少8位，且包含字母和数字。';
+                errorDiv.style.display = 'block';
+                return; 
+            }
+            // --- End validation ---
+
             registerButton.disabled = true;
             registerButton.innerHTML = `<span class="spinner"></span> 正在注册`;
             errorDiv.style.display = 'none';
@@ -201,14 +209,17 @@ export function addEventListeners() {
                 });
 
             } catch(err: any) {
-                // More helpful error messages for the user
-                let errorMessage = '注册时发生未知错误。';
-                if (err.message.includes('Password should be at least 6 characters')) {
-                    errorMessage = '密码必须至少为6个字符。';
-                } else if (err.message.includes('invalid')) {
-                    errorMessage = '注册信息无效，请检查后重试或联系管理员。';
-                } else {
-                    errorMessage = err.message;
+                let errorMessage = '注册时发生未知错误。请稍后重试。';
+                if (err.message) {
+                    if (err.message.includes('Password should be at least')) {
+                        errorMessage = '密码太短，请设置符合要求的密码。';
+                    } else if (err.message.includes('password should not be')) {
+                        errorMessage = '您设置的密码过于简单或常用，请更换一个更复杂的密码。';
+                    } else if (err.message.includes('User already registered')) {
+                        errorMessage = '该用户（或内部邮箱）已存在，请尝试其他用户名。';
+                    } else {
+                        errorMessage = '注册信息无效，请检查后重试或联系管理员。'; // Fallback
+                    }
                 }
                 errorDiv.textContent = errorMessage;
                 errorDiv.style.display = 'block';
