@@ -76,6 +76,7 @@ function renderRegisterView() {
                     <div class="auth-input-group">
                         <label for="reg-password">密码</label>
                         <input type="password" id="reg-password" name="password" required autocomplete="new-password">
+                        <p class="password-hint">密码至少需要6位字符。</p>
                     </div>
                     <button type="submit" class="auth-button">注册</button>
                 </form>

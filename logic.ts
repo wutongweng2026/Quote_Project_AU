@@ -169,8 +169,7 @@ export function addEventListeners() {
             errorDiv.style.display = 'none';
 
             try {
-                // Generate a unique, safe email for Supabase auth, as it doesn't support non-email logins.
-                // The user's actual username is stored in the `profiles` table. This generated email is never shown.
+                // Generate a new unique email for EVERY registration attempt to bypass potential rate-limiting issues.
                 const email = `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}@quotesystem.app`;
 
                 const { data: { user }, error: signUpError } = await supabase.auth.signUp({ email, password });
@@ -201,18 +200,23 @@ export function addEventListeners() {
                 });
 
             } catch(err: any) {
-                let errorMessage = '注册时发生未知错误。请稍后重试。';
-                if (err.message) {
-                    if (err.message.includes('Password should be at least')) {
-                        errorMessage = '密码太短，请设置符合要求的密码。';
-                    } else if (err.message.includes('password should not be')) {
-                        errorMessage = '您设置的密码过于简单或常用，请更换一个更复杂的密码。';
-                    } else if (err.message.includes('User already registered')) {
-                        errorMessage = '该用户（或内部邮箱）已存在，请尝试其他用户名。';
+                let errorMessage: string;
+
+                if (err?.message) {
+                    const lowerCaseMessage = err.message.toLowerCase();
+                    if (lowerCaseMessage.includes('password should be at least')) {
+                        errorMessage = '密码太短，至少需要6位字符。';
+                    } else if (lowerCaseMessage.includes('user already registered') || (err.code === '23505' && err.message.includes('full_name'))) {
+                        // The second condition checks for a PostgreSQL unique constraint violation on full_name
+                        errorMessage = '该用户名已被注册，请尝试其他名称。';
                     } else {
-                        errorMessage = '注册信息无效，请检查后重试或联系管理员。'; // Fallback
+                        // For rate limit and all other errors, show a generic message.
+                        errorMessage = '注册失败，请稍后重试。';
                     }
+                } else {
+                    errorMessage = '注册时发生未知错误，请稍后重试。';
                 }
+                
                 errorDiv.textContent = errorMessage;
                 errorDiv.style.display = 'block';
             } finally {
