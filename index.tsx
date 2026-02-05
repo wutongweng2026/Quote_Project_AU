@@ -1,3 +1,4 @@
+
 // --- SUPABASE CLIENT ---
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config';
 const supabaseUrl = SUPABASE_URL;
@@ -7,7 +8,7 @@ import { createClient, SupabaseClient, User as AuthUser, PostgrestError } from '
 
 // --- TYPES ---
 interface PriceDataItem { [model: string]: number; }
-interface Prices { [category: string]: PriceDataItem; }
+interface Prices { [category:string]: PriceDataItem; }
 
 // Database-first types matching your new schema
 interface DbQuoteItem { id: number; category: string; model: string; price: number; }
@@ -116,10 +117,10 @@ const $ = (selector: string) => document.querySelector(selector);
 const appContainer = $('#app')!;
 
 // --- RENDER FUNCTIONS ---
-function render() {
+function renderApp() {
     let html = '';
     if (state.appStatus === 'loading') {
-        html = `<div class="app-status-container"><div class="loading-spinner"></div><h2>正在连接...</h2></div>`;
+        html = `<div class="app-status-container"><div class="loading-spinner"></div><h2>正在加载...</h2></div>`;
     } else if (state.appStatus === 'error') {
         html = `<div class="app-status-container"><h2>出现错误</h2><div class="error-details">${state.errorMessage}</div></div>`;
     } else if (state.view === 'login') {
@@ -468,8 +469,26 @@ function showModal(options: Partial<CustomModalState>) {
         cancelText: '取消', showCancel: false, isDanger: false, errorMessage: '', ...options
     };
     state.showCustomModal = true;
-    render();
+    renderApp();
 }
+
+function updateTotalsUI() {
+    const totals = calculateTotals();
+    const finalPriceEl = document.querySelector('.final-price-display strong');
+    const discountDisplayEl = document.querySelector('.discount-display');
+    const finalConfigEl = document.querySelector('.final-config-display');
+
+    if (finalPriceEl) {
+        finalPriceEl.textContent = `¥ ${totals.finalPrice.toFixed(2)}`;
+    }
+    if (discountDisplayEl) {
+        discountDisplayEl.textContent = totals.appliedDiscountLabel;
+    }
+    if (finalConfigEl) {
+        (finalConfigEl as HTMLTextAreaElement).value = getFinalConfigText() || '未选择配件';
+    }
+}
+
 
 function calculateTotals() {
     if (state.appStatus !== 'ready') return { finalPrice: 0, appliedDiscountLabel: '无折扣' };
@@ -565,7 +584,7 @@ function handleMatchConfig() {
         }
     }
     state.selection = newSelection;
-    render();
+    renderApp();
 }
 
 function handleExportExcel() {
@@ -658,22 +677,19 @@ function addEventListeners() {
             errorDiv.style.display = 'none';
 
             try {
-                // Supabase requires a valid email format, so we create a dummy one.
                 const email = `${username.replace(/\s/g, '_')}@quotesystem.local`;
 
                 const { data: { user }, error: signUpError } = await supabase.auth.signUp({ email, password });
                 if (signUpError) throw signUpError;
                 if (!user) throw new Error('无法创建用户。');
 
-                // Now create the profile entry for the new user.
                 const { error: profileError } = await supabase.from('profiles').insert({
                     id: user.id,
                     full_name: username,
-                    role: 'sales', // Default role
-                    is_approved: false // Default not approved
+                    role: 'sales', 
+                    is_approved: false
                 });
                 if (profileError) {
-                    // This is a critical error, might need manual intervention.
                     console.error("Failed to create profile after signup:", profileError);
                     throw new Error("注册失败，请联系管理员。");
                 }
@@ -683,7 +699,7 @@ function addEventListeners() {
                     message: '您的账户已创建，请等待管理员审核批准后即可登录。',
                     onConfirm: () => {
                         state.view = 'login';
-                        render();
+                        renderApp();
                     }
                 });
 
@@ -712,7 +728,7 @@ function addEventListeners() {
                  if (error) throw error;
                  if (!state.priceData.prices[category]) state.priceData.prices[category] = {};
                  state.priceData.prices[category][model] = price;
-                 render();
+                 renderApp();
                  target.reset();
                  ($('#quick-add-category-input') as HTMLInputElement).focus();
             });
@@ -726,12 +742,12 @@ function addEventListeners() {
             if (link.id === 'go-to-register') {
                 e.preventDefault();
                 state.view = 'register';
-                render();
+                renderApp();
                 return;
             } else if (link.id === 'go-to-login') {
                 e.preventDefault();
                 state.view = 'login';
-                render();
+                renderApp();
                 return;
             }
         }
@@ -743,7 +759,6 @@ function addEventListeners() {
 
         if (button.id === 'logout-btn') {
             await supabase.auth.signOut();
-            // onAuthStateChange will handle render
         } else if (button.id === 'user-management-btn') {
             state.view = 'userManagement';
             needsRender = true;
@@ -789,7 +804,7 @@ function addEventListeners() {
                         showModal({ title: '删除失败', message: error.message });
                     } else {
                         state.profiles = state.profiles.filter(p => p.id !== userId);
-                        render(); // render inside callback
+                        renderApp();
                     }
                 }
             });
@@ -804,7 +819,7 @@ function addEventListeners() {
                      if(error) { showModal({ title: '删除失败', message: error.message }); } 
                      else {
                         if (state.priceData.prices[category]) delete state.priceData.prices[category][model];
-                        render(); // render inside callback
+                        renderApp();
                      }
                 }
             });
@@ -828,40 +843,58 @@ function addEventListeners() {
         } else if (button.id === 'generate-quote-btn') {
             handleExportExcel();
         } else if (button.id === 'match-config-btn') {
-            handleMatchConfig(); // This calls render internally
+            handleMatchConfig();
         }
         
         if (needsRender) {
-            render();
+            renderApp();
         }
     });
 
     appContainer.addEventListener('input', (e) => {
         const target = e.target as HTMLInputElement;
+
         if (target.id === 'admin-search-input') {
             state.adminSearchTerm = target.value;
-            render();
-        } else if (target.id === 'special-discount-input' || target.classList.contains('quantity-input')) {
-            if (target.id === 'special-discount-input') state.specialDiscount = Math.max(0, Number(target.value));
-            const row = target.closest('tr');
-            if (row?.dataset.category) {
-                 state.selection[row.dataset.category].quantity = Math.max(0, parseInt((row.querySelector('.quantity-input') as HTMLInputElement).value, 10) || 0);
+            renderApp();
+            return;
+        }
+
+        if (target.id === 'special-discount-input') {
+            state.specialDiscount = Math.max(0, Number(target.value));
+            updateTotalsUI();
+            return;
+        }
+        
+        const row = target.closest('tr');
+        if (row && (target.classList.contains('quantity-input') || target.classList.contains('custom-quantity-input'))) {
+            const quantity = Math.max(0, parseInt(target.value, 10) || 0);
+            if (row.dataset.category) {
+                state.selection[row.dataset.category].quantity = quantity;
+            } else if (row.dataset.customId) {
+                const customId = parseInt(row.dataset.customId, 10);
+                const item = state.customItems.find(i => i.id === customId);
+                if (item) item.quantity = quantity;
             }
-            render();
+            updateTotalsUI();
+            return;
+        }
+
+        if (target.id === 'new-category-input') {
+            state.newCategory = target.value;
         }
     });
 
     appContainer.addEventListener('change', async (e) => {
         const target = e.target as HTMLSelectElement;
         const row = target.closest('tr');
-        let needsRender = false;
 
         if (target.id === 'markup-points-select') {
             state.markupPoints = Number(target.value);
-            needsRender = true;
+            updateTotalsUI();
         } else if (row?.dataset.category && target.classList.contains('model-select')) {
             state.selection[row.dataset.category].model = target.value;
-            needsRender = true;
+            updateTotalsUI();
         } else if (target.classList.contains('user-role-select')) {
             const userId = target.closest('tr')?.dataset.userId;
             if (!userId) return;
@@ -869,129 +902,117 @@ function addEventListeners() {
             const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
             if (error) {
                 showModal({ title: '错误', message: `更新角色失败: ${error.message}` });
-                // Revert UI on failure
                 target.value = state.profiles.find(p => p.id === userId)?.role || 'sales';
             } else {
                 const profile = state.profiles.find(p => p.id === userId);
                 if (profile) profile.role = newRole;
-                needsRender = true; // Re-render to reflect potential UI changes if any
             }
-        }
-        
-        if (needsRender) {
-            render();
         }
     });
 }
 
-// --- INITIALIZATION ---
-async function loadAllData() {
+// FIX: Changed function to return a boolean indicating success or failure.
+async function loadAllData(): Promise<boolean> {
     try {
-        const fetchPromise = Promise.all([
-            supabase.from('quote_items').select('*'),
-            supabase.from('quote_discounts').select('*'),
-            supabase.from('quote_markups').select('*')
-        ]);
+        const { data: itemsData, error: itemsError } = await supabase.from('quote_items').select('*');
+        if (itemsError) throw itemsError;
 
-        const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('TIMEOUT')), 10000);
-        });
+        const { data: discountsData, error: discountsError } = await supabase.from('quote_discounts').select('*');
+        if (discountsError) throw discountsError;
 
-        const responses = await Promise.race([fetchPromise, timeoutPromise]) as any[];
-        const [itemsRes, discountsRes, markupsRes] = responses;
+        const { data: markupsData, error: markupsError } = await supabase.from('quote_markups').select('*');
+        if (markupsError) throw markupsError;
 
-        const errors = [itemsRes.error, discountsRes.error, markupsRes.error].filter(Boolean);
-        if (errors.length > 0) throw new Error(errors.map(e => e.message).join(', '));
-
-        const itemsData: DbQuoteItem[] = itemsRes.data || [];
-        state.priceData.prices = itemsData.reduce((acc, item) => {
+        state.priceData.prices = (itemsData || []).reduce((acc, item) => {
             if (!acc[item.category]) acc[item.category] = {};
             acc[item.category][item.model] = item.price;
             return acc;
         }, {} as Prices);
 
-        state.priceData.tieredDiscounts = discountsRes.data || [];
-        state.priceData.markupPoints = markupsRes.data || [];
+        state.priceData.tieredDiscounts = discountsData || [];
+        state.priceData.markupPoints = markupsData || [];
         
         if (state.priceData.markupPoints.length > 0 && state.markupPoints === 0) {
             state.markupPoints = state.priceData.markupPoints[0].id;
         }
 
         state.appStatus = 'ready';
+        return true;
     } catch (error: any) {
         state.appStatus = 'error';
-        if (error.message === 'TIMEOUT' || (error.message && error.message.includes('Failed to fetch'))) {
-             state.errorMessage = `
-                <h3 style="color: #b91c1c; margin-top:0;">无法加载初始数据</h3>
-                <p>这通常是由于数据库权限问题导致的。您可能为 <code>quote_items</code> 等表启用了RLS，但没有设置公共读取策略。</p>
-                <h4>解决方案：</h4>
-                <p>请前往您的 Supabase SQL Editor 运行以下命令，然后刷新页面：</p>
-                <pre style="background-color: #e2e8f0; padding: 1rem; border-radius: 6px; text-align: left;"><code>CREATE POLICY "Public can read all quote items" ON public.quote_items FOR SELECT USING (true);
-CREATE POLICY "Public can read all quote discounts" ON public.quote_discounts FOR SELECT USING (true);
-CREATE POLICY "Public can read all quote markups" ON public.quote_markups FOR SELECT USING (true);</code></pre>`;
-        } else {
-            state.errorMessage = `加载数据时发生未知错误: ${error.message}`;
-        }
+        state.errorMessage = `
+            <h3 style="color: #b91c1c; margin-top:0;">无法加载应用数据</h3>
+            <p>登录成功，但无法获取报价所需的核心数据。这通常是由于数据库权限问题导致的。</p>
+            <h4>解决方案：</h4>
+            <p>请确保已为 <strong>登录用户</strong> 开启了读取 <code>quote_items</code>, <code>quote_discounts</code>, 和 <code>quote_markups</code> 这三个表的权限。请前往您的 Supabase SQL Editor 运行以下命令，然后刷新页面重新登录：</p>
+            <pre style="background-color: #e2e8f0; padding: 1rem; border-radius: 6px; text-align: left;"><code>CREATE POLICY "Authenticated users can read all quote items" ON public.quote_items FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Authenticated users can read all quote discounts" ON public.quote_discounts FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Authenticated users can read all quote markups" ON public.quote_markups FOR SELECT TO authenticated USING (true);</code></pre>
+            <p><strong>重要提示:</strong> 如果您之前创建了 "Public can read..." 策略，这些新策略是必需的，因为现在是由已登录用户而非匿名公众来读取数据。</p>
+            <p style="margin-top: 1rem;">原始错误: ${error.message}</p>`;
         state.currentUser = null;
+        return false;
     }
-    render();
 }
 
 supabase.auth.onAuthStateChange(async (event, session) => {
     if (session?.user) {
         const { data: profile, error } = await supabase
             .from('profiles')
-            .select('id, full_name, role, is_approved') // Fetch is_approved status
+            .select('id, full_name, role, is_approved')
             .eq('id', session.user.id)
             .single();
-        
+
         if (error) {
             state.currentUser = null;
             state.appStatus = 'error';
-            // Keep the detailed recursion error message
-            if (error.message.includes('infinite recursion')) {
-                 state.errorMessage = `<h3 style="color: #b91c1c;">数据库权限配置错误 (无限递归)</h3><p>系统检测到您的Supabase <strong>profiles</strong>表存在RLS无限递归问题。请参考之前的指导进行修复。</p>`;
-            } else {
-                state.errorMessage = `无法获取您的用户资料，可能是数据库权限问题: ${error.message}`;
-            }
-        } else if (profile) {
-            // CRITICAL: Check if user is approved, but always allow admins through.
+            state.errorMessage = `无法获取您的用户资料: ${error.message}. 这可能是数据库权限问题。请确保您为 'profiles' 表启用了RLS，并设置了允许用户读取自己的数据。`;
+            renderApp();
+            return;
+        }
+
+        if (profile) {
             if (!profile.is_approved && profile.role !== 'admin') {
-                // If not approved, show modal and sign out immediately.
                 showModal({
                     title: '账户待审批',
                     message: '您的账户正在等待管理员批准，请稍后再试。',
                     onConfirm: async () => { await supabase.auth.signOut(); }
                 });
-                return; // Stop further processing
+                return;
             }
 
-            state.appStatus = 'ready';
-            state.errorMessage = null;
-            state.currentUser = { ...profile, auth: session.user };
-            
-            if (profile.role === 'admin') {
-                const { data: allProfiles, error: profilesError } = await supabase.from('profiles').select('*');
-                if (profilesError) {
-                    showModal({ title: '后台错误', message: `无法加载用户列表: ${profilesError.message}` });
-                    state.profiles = [profile]; 
+            state.appStatus = 'loading';
+            renderApp();
+
+            // FIX: Use the returned boolean from loadAllData to conditionally proceed.
+            const loadedSuccessfully = await loadAllData(); 
+
+            if (loadedSuccessfully) {
+                state.currentUser = { ...profile, auth: session.user };
+                if (profile.role === 'admin') {
+                    const { data: allProfiles, error: profilesError } = await supabase.from('profiles').select('*');
+                    state.profiles = profilesError ? [profile] : (allProfiles || []);
                 } else {
-                    state.profiles = allProfiles || [];
+                    state.profiles = [profile];
                 }
-            } else {
-                state.profiles = [profile];
+                state.view = 'quote';
             }
+        } else {
+            showModal({
+                title: '登录错误',
+                message: '您的账户存在，但未能找到对应的用户资料。请联系管理员。',
+                onConfirm: async () => { await supabase.auth.signOut(); }
+            });
+            return;
         }
     } else {
-        if (state.appStatus !== 'error') state.appStatus = 'ready';
+        state.appStatus = 'ready';
         state.currentUser = null;
         state.profiles = [];
-        // When signed out, always return to login view
         state.view = 'login';
     }
     
-    render();
+    renderApp();
 });
 
 addEventListeners();
-loadAllData();
