@@ -208,7 +208,7 @@ export function addEventListeners() {
                     const lowerCaseMessage = err.message.toLowerCase();
                     if (lowerCaseMessage.includes('password should be at least')) {
                         errorMessage = '密码太短，至少需要6位字符。';
-                    } else if (err.code === '23505' || lowerCaseMessage.includes('unique constraint')) { 
+                    } else if (err.code === '23505' || lowerCaseMessage.includes('unique constraint') || lowerCaseMessage.includes('duplicate key')) { 
                         // Catches PostgreSQL unique constraint violation, e.g., on username
                         errorMessage = '该用户名已被注册，请尝试其他名称。';
                     } else {
