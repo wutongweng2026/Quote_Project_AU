@@ -215,7 +215,7 @@ export function addEventListeners() {
                         // Catches PostgreSQL unique constraint violation, e.g., on username
                         errorMessage = '该用户名已被注册，请尝试其他名称。';
                     } else if (lowerCaseMessage.includes('rate limit exceeded')) {
-                        errorMessage = '您的注册操作过于频繁，请稍候片刻再试。';
+                        errorMessage = '您的注册操作过于频繁，请等待倒计时结束后再试。';
                         isRateLimitError = true;
                     }
                     else {
@@ -230,7 +230,7 @@ export function addEventListeners() {
                 errorDiv.style.display = 'block';
             } finally {
                 if (isRateLimitError) {
-                    let countdown = 10;
+                    let countdown = 30;
                     registerButton.innerHTML = `请稍候 (${countdown}s)`;
                     const interval = setInterval(() => {
                         countdown--;
