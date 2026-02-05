@@ -40,6 +40,7 @@ export interface CustomModalState {
     isDanger: boolean;
     inputType?: 'text' | 'password';
     errorMessage?: string;
+    isDismissible?: boolean;
 }
 
 export interface AppState {

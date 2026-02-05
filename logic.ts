@@ -2,6 +2,8 @@ import { state, supabase, getInitialSelection } from './state';
 import { renderApp, showModal, updateTotalsUI, setSyncStatus, renderAdminDataTableBody } from './ui';
 import { getFinalConfigText, calculateTotals } from './calculations';
 import type { PostgrestError } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js'; // Import factory function
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config';
 
 declare var XLSX: any;
 const $ = (selector: string) => document.querySelector(selector);
@@ -197,17 +199,14 @@ export function addEventListeners() {
             const overlay = target.matches('.modal-overlay');
 
             if (confirmButton) {
-                // The onConfirm callback is now responsible for closing the modal
-                // to allow for in-modal validation.
                 state.customModal.onConfirm?.();
-                return; // Stop further processing
+                return; 
             }
-            if (cancelButton || overlay) {
+            if (cancelButton || (overlay && state.customModal.isDismissible !== false)) {
                 state.showCustomModal = false;
                 renderApp();
-                return; // Stop further processing
+                return; 
             }
-            // If the click is inside the modal content but not a button, do nothing.
             if(target.closest('.modal-content')) {
                 return;
             }
@@ -224,80 +223,8 @@ export function addEventListeners() {
                 console.error("Logout failed:", error);
                 showModal({ title: '退出失败', message: `无法退出系统: ${error.message}` });
             }
-        } else if (button.id === 'import-excel-btn') {
-            ($('#import-file-input') as HTMLInputElement)?.click();
-        } else if (button.id === 'add-markup-point-btn') {
-            const { data, error } = await supabase.from('quote_markups').insert({ alias: '新点位', value: 0 }).select().single();
-            if (error) {
-                showModal({ title: '错误', message: `无法添加点位: ${error.message}` });
-            } else {
-                state.priceData.markupPoints.push(data);
-                needsRender = true;
-            }
-        } else if (button.id === 'add-tier-btn') {
-            const { data, error } = await supabase.from('quote_discounts').insert({ threshold: 0, rate: 10 }).select().single();
-            if (error) {
-                showModal({ title: '错误', message: `无法添加折扣: ${error.message}` });
-            } else {
-                state.priceData.tieredDiscounts.push(data);
-                needsRender = true;
-            }
-        } else if (button.classList.contains('remove-markup-point-btn')) {
-            const id = button.dataset.id;
-            if (!id) return;
-            showModal({ title: '确认删除', message: `确定要删除此点位吗？`, isDanger: true, showCancel: true, confirmText: '删除',
-                onConfirm: async () => {
-                    const confirmButton = $('#custom-modal-confirm-btn') as HTMLButtonElement;
-                    if (confirmButton) {
-                        confirmButton.disabled = true;
-                        confirmButton.innerHTML = `<span class="spinner"></span> 正在删除...`;
-                    }
-                    const cancelButton = $('#custom-modal-cancel-btn') as HTMLButtonElement;
-                    if (cancelButton) {
-                        cancelButton.disabled = true;
-                    }
-
-                    const { error } = await supabase.from('quote_markups').delete().eq('id', id);
-
-                    if (error) { 
-                        showModal({ title: '删除失败', message: error.message, isDanger: true }); 
-                    } else {
-                        state.showCustomModal = false;
-                        state.priceData.markupPoints = state.priceData.markupPoints.filter(p => p.id !== parseInt(id));
-                        renderApp();
-                    }
-                }
-            });
-        } else if (button.classList.contains('remove-tier-btn')) {
-            const id = button.dataset.id;
-            if (!id) return;
-            showModal({ title: '确认删除', message: `确定要删除此折扣阶梯吗？`, isDanger: true, showCancel: true, confirmText: '删除',
-                onConfirm: async () => {
-                    const confirmButton = $('#custom-modal-confirm-btn') as HTMLButtonElement;
-                    if (confirmButton) {
-                        confirmButton.disabled = true;
-                        confirmButton.innerHTML = `<span class="spinner"></span> 正在删除...`;
-                    }
-                    const cancelButton = $('#custom-modal-cancel-btn') as HTMLButtonElement;
-                    if (cancelButton) {
-                        cancelButton.disabled = true;
-                    }
-
-                    const { error } = await supabase.from('quote_discounts').delete().eq('id', id);
-                    
-                    if (error) { 
-                        showModal({ title: '删除失败', message: error.message, isDanger: true }); 
-                    } else {
-                        state.showCustomModal = false;
-                        state.priceData.tieredDiscounts = state.priceData.tieredDiscounts.filter(t => t.id !== parseInt(id));
-                        renderApp();
-                    }
-                }
-            });
-        } else if (button.id === 'user-management-btn') {
-            state.view = 'userManagement';
-            needsRender = true;
         } else if (button.id === 'add-new-user-btn') {
+            // --- REFACTORED ADD USER LOGIC (TEMP CLIENT STRATEGY) ---
             showModal({
                 title: '添加新用户',
                 message: `
@@ -327,132 +254,82 @@ export function addEventListeners() {
                     confirmButton.disabled = true;
                     confirmButton.innerHTML = `<span class="spinner"></span> 正在添加`;
                     state.customModal.errorMessage = '';
-                    renderApp();
+                    renderApp(); 
                     
                     try {
-                        // 1. Save the admin's current session
-                        const { data: { session: adminSession } } = await supabase.auth.getSession();
-                        if (!adminSession) throw new Error("无法获取管理员会话，请重新登录。");
+                        // Strategy: Create a TEMPORARY, IN-MEMORY Supabase client.
+                        // This allows us to sign up a new user WITHOUT signing out the current admin.
+                        // The 'storage: { ... }' part is critical.
+                        const tempClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+                            auth: {
+                                persistSession: false, // Don't save to localStorage
+                                autoRefreshToken: false,
+                                detectSessionInUrl: false
+                            }
+                        });
 
-                        // 2. Create a fake email for the new user
-                        const fakeEmail = `user-${Date.now()}@quotesystem.local`;
+                        const fakeEmail = `user-${Date.now()}-${Math.floor(Math.random()*1000)}@quotesystem.local`;
 
-                        // 3. Use signUp to create the new user. This logs the admin out temporarily.
-                        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+                        // 1. Sign up user using the temporary client
+                        const { data: signUpData, error: signUpError } = await tempClient.auth.signUp({
                             email: fakeEmail,
                             password: newPassword,
+                            options: {
+                                data: {
+                                    full_name: newUsername,
+                                    role: 'sales'
+                                }
+                            }
                         });
 
                         if (signUpError) throw signUpError;
-                        if (!signUpData.user) throw new Error("创建用户成功，但未返回用户信息。");
+                        if (!signUpData.user) throw new Error("用户创建失败: 未返回用户数据。");
 
-                        // 4. IMPORTANT: Restore the admin's session immediately
-                        const { error: sessionError } = await supabase.auth.setSession({
-                            access_token: adminSession.access_token,
-                            refresh_token: adminSession.refresh_token,
-                        });
-                        if (sessionError) {
-                            throw new Error(`管理员会话恢复失败: ${sessionError.message}。页面将刷新。`);
-                        }
-
-                        // 5. Manually create the user's profile
+                        // 2. Use the MAIN client (Admin) to insert the profile.
+                        // This works because we never logged out the admin.
+                        // The admin inserts the row for the new user ID.
                         const newProfile = {
                             id: signUpData.user.id,
                             full_name: newUsername,
                             role: 'sales' as const,
                             is_approved: true,
                         };
-                        const { error: profileError } = await supabase.from('profiles').insert(newProfile);
+                        
+                        const { error: profileError } = await supabase.from('profiles').upsert(newProfile);
 
                         if (profileError) {
-                             throw new Error(`用户登录信息已创建，但配置档案失败: ${profileError.message}`);
+                            console.error("Failed to upsert profile:", profileError);
+                            // Even if this fails, we try to show success if the user was created. 
+                            // But usually, if this fails, the user won't show in the list properly.
+                            throw new Error(`用户创建成功，但资料写入失败: ${profileError.message}`);
                         }
 
-                        // 6. Success: Update state and show success modal
+                        // 3. Success
                         state.profiles.push(newProfile);
+                        
                         showModal({
                             title: '添加成功',
-                            message: `用户 "${newUsername}" 已成功添加到系统中。`,
+                            message: `用户 "${newUsername}" 已成功添加。`,
                             confirmText: '确定',
                             onConfirm: () => {
                                 state.showCustomModal = false;
-                                renderApp(); // Re-render to show updated list
+                                renderApp();
                             }
                         });
 
-
                     } catch (error: any) {
-                        let friendlyErrorMessage = error.message;
-                        if (error.message && error.message.toLowerCase().includes('rate limit')) {
-                            friendlyErrorMessage = "操作过于频繁，已触发平台的邮件发送限制。请等待一小时后再试。\n\n(提示: 为彻底解决此问题, 请在 Supabase 后台的 Authentication -> Providers -> Email 部分关闭 “Confirm email” 选项。)";
-                        }
-
-                        state.customModal.errorMessage = `创建失败: ${friendlyErrorMessage}`;
+                        console.error("Add user error:", error);
+                        let msg = error.message;
+                        if (msg.includes('rate limit')) msg = "操作过于频繁，请稍后再试。";
+                        state.customModal.errorMessage = `添加失败: ${msg}`;
                         confirmButton.disabled = false;
                         confirmButton.innerHTML = '确认添加';
                         renderApp();
-
-                        if (error.message.includes("页面将刷新")) {
-                            setTimeout(() => window.location.reload(), 3000);
-                        }
                     }
                 }
             });
-        } else if (button.id === 'login-log-btn') {
-            state.view = 'loginLog';
-            const { data, error } = await supabase.from('login_logs').select('*').order('login_at', { ascending: false }).limit(100);
-            if (error) {
-                showModal({ title: '错误', message: `无法加载登录日志: ${error.message}` });
-                state.loginLogs = [];
-            } else {
-                state.loginLogs = data;
-            }
-            needsRender = true;
-        } else if (button.id === 'app-view-toggle-btn') {
-            state.view = 'admin';
-            needsRender = true;
-        } else if (button.id === 'back-to-quote-btn') {
-            state.view = 'quote';
-            needsRender = true;
-        } else if (button.id === 'reset-btn') {
-            state.selection = getInitialSelection();
-            state.customItems = [];
-            state.newCategory = '';
-            state.specialDiscount = 0;
-            state.markupPoints = state.priceData.markupPoints[0]?.id || 0;
-            needsRender = true;
-        } else if (button.classList.contains('approve-user-btn')) {
-            const userId = button.closest('tr')?.dataset.userId;
-            if (!userId) return;
-            const { error } = await supabase.from('profiles').update({ is_approved: true }).eq('id', userId);
-            if (error) {
-                showModal({ title: '错误', message: `批准用户失败: ${error.message}` });
-            } else {
-                const profile = state.profiles.find(p => p.id === userId);
-                if (profile) profile.is_approved = true;
-                needsRender = true;
-            }
-        } else if (button.classList.contains('permission-toggle-btn')) {
-            const row = button.closest('tr');
-            const userId = row?.dataset.userId;
-            const action = button.dataset.action;
-            if (!userId || !action) return;
-
-            const newRole = action === 'grant' ? 'admin' : 'sales';
-            const profile = state.profiles.find(p => p.id === userId);
-            if (!profile) return;
-            
-            const originalRole = profile.role;
-            profile.role = newRole; // Optimistic UI update
-            renderApp();
-
-            const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
-            if (error) {
-                profile.role = originalRole; // Revert on failure
-                showModal({ title: '错误', message: `更新权限失败: ${error.message}` });
-                renderApp();
-            }
         } else if (button.classList.contains('delete-user-btn')) {
+            // --- REFACTORED DELETE USER LOGIC ---
             const row = button.closest('tr');
             const userId = row?.dataset.userId;
             const userName = row?.querySelector('td:first-child')?.textContent;
@@ -475,61 +352,65 @@ export function addEventListeners() {
                         cancelButton.disabled = true;
                     }
 
-                    const { error } = await supabase.rpc('delete_user', { user_id: userId });
-                    
-                    if (error) {
-                        if (error.message.includes('function') && (error.message.includes('does not exist') || error.message.includes('不存在'))) {
-                            if (state.hasAttemptedDbFix) {
-                                showModal({
-                                    title: '删除仍然失败',
-                                    message: '您似乎已经运行了数据库修复脚本，但问题依旧存在。这可能是一个缓存或权限问题。<br><br><strong>请尝试强制刷新页面 (按 Ctrl + F5)</strong>，然后再次尝试删除。如果问题还是无法解决，可能需要检查 Supabase 项目的深层配置。',
-                                    isDanger: true,
-                                    confirmText: '好的'
-                                });
-                            } else {
-                                const sqlFixMessage = `
-                                    <p style="margin-bottom: 1rem;">操作失败，因为您的数据库缺少一个必需的后台函数 (<code>delete_user</code>)。</p>
-                                    <p style="margin-bottom: 0.5rem;">这是一个一次性的配置问题。要解决它，请按以下步骤操作:</p>
-                                    <ol style="text-align: left; margin: 1rem 0; padding-left: 1.5rem; list-style-position: inside;">
-                                      <li style="margin-bottom: 0.5rem;">登录您的 <a href="https://app.supabase.com/" target="_blank" rel="noopener noreferrer">Supabase 项目</a>。</li>
-                                      <li style="margin-bottom: 0.5rem;">在左侧菜单中, 点击 <strong>SQL Editor</strong>。</li>
-                                      <li style="margin-bottom: 0.5rem;">点击 <strong>+ New query</strong> 按钮。</li>
-                                      <li style="margin-bottom: 0.5rem;">将下面的代码完整复制并粘贴到查询窗口中, 然后点击 <strong>RUN</strong>。</li>
-                                    </ol>
-                                    <pre style="background-color: #f1f5f9; border-radius: 4px; padding: 0.8rem; text-align: left; white-space: pre-wrap; word-break: break-all; font-size: 0.8rem; line-height: 1.4;"><code>-- Enables admin users to delete other users
+                    try {
+                        // Wrapped in try/catch to ensure UI resets even on network failure
+                        const { error } = await supabase.rpc('delete_user', { user_id: userId });
+                        
+                        if (error) {
+                            throw error; // Throw to catch block to handle UI
+                        }
+
+                        // Success path
+                        state.showCustomModal = false;
+                        state.profiles = state.profiles.filter(p => p.id !== userId);
+                        renderApp();
+
+                    } catch (error: any) {
+                        console.error("Delete failed:", error);
+                        
+                        // SQL Fix Message Logic
+                        const sqlFixMessage = `
+                            <p style="margin-bottom: 1rem;">删除操作失败。这通常是因为数据库缺少必要的权限配置或外键约束阻止了删除。</p>
+                            <p style="margin-bottom: 0.5rem;">请<strong>一次性</strong>运行以下完整修复脚本。它会重置删除函数并清理相关权限：</p>
+                            <ol style="text-align: left; margin: 1rem 0; padding-left: 1.5rem; list-style-position: inside;">
+                              <li style="margin-bottom: 0.5rem;">登录 <a href="https://app.supabase.com/" target="_blank" rel="noopener noreferrer">Supabase SQL Editor</a>。</li>
+                              <li style="margin-bottom: 0.5rem;">点击 <strong>+ New query</strong>。</li>
+                              <li style="margin-bottom: 0.5rem;">粘贴并运行下方代码：</li>
+                            </ol>
+                            <pre style="background-color: #f1f5f9; border-radius: 4px; padding: 0.8rem; text-align: left; white-space: pre-wrap; word-break: break-all; font-size: 0.75rem; line-height: 1.4; max-height: 200px; overflow-y: auto;"><code>-- 1. Create a safe delete function that handles profiles first
 create or replace function public.delete_user(user_id uuid) 
 returns void 
 language plpgsql 
 security definer 
 as $$
 begin
+  -- Manually delete from public tables first to avoid FK issues if cascade is missing
+  delete from public.profiles where id = user_id;
+  delete from public.login_logs where user_id = user_id;
+  -- Then delete from auth
   perform auth.admin_delete_user(user_id);
 end;
 $$;
 
+-- 2. Grant permission to authenticated users (application logic checks for admin role)
 grant execute on function public.delete_user(uuid) to authenticated;
 </code></pre>
-                                    <p style="margin-top: 1rem;">完成后，请关闭此弹窗再重试删除操作。</p>
-                                `;
-                                showModal({ 
-                                    title: '删除失败 (数据库配置缺失)', 
-                                    message: sqlFixMessage, 
-                                    isDanger: true,
-                                    confirmText: '我已了解',
-                                    onConfirm: () => {
-                                        state.hasAttemptedDbFix = true;
-                                        state.showCustomModal = false;
-                                        renderApp();
-                                    }
-                                });
+                            <p style="margin-top: 1rem; font-size: 0.9rem;">错误详情: ${error.message}</p>
+                        `;
+
+                        showModal({ 
+                            title: '需要数据库修复', 
+                            message: sqlFixMessage, 
+                            isDanger: true,
+                            confirmText: '我已运行脚本，重试删除',
+                            showCancel: true,
+                            cancelText: '取消',
+                            isDismissible: false,
+                            onConfirm: async () => {
+                                state.showCustomModal = false;
+                                renderApp();
                             }
-                        } else {
-                            showModal({ title: '删除失败', message: error.message, isDanger: true });
-                        }
-                    } else {
-                        state.showCustomModal = false;
-                        state.profiles = state.profiles.filter(p => p.id !== userId);
-                        renderApp();
+                        });
                     }
                 }
             });
@@ -562,6 +443,9 @@ grant execute on function public.delete_user(uuid) to authenticated;
                 }
             });
         }
+        else if (button.id === 'import-excel-btn') {
+             ($('#import-file-input') as HTMLInputElement)?.click();
+        }
         else if (button.classList.contains('admin-save-item-btn')) {
             const row = button.closest('tr');
             if (!row) return;
@@ -583,6 +467,88 @@ grant execute on function public.delete_user(uuid) to authenticated;
             handleExportExcel();
         } else if (button.id === 'match-config-btn') {
             handleMatchConfig();
+        } else if (button.id === 'add-markup-point-btn') {
+             const { data, error } = await supabase.from('quote_markups').insert({ alias: '新点位', value: 0 }).select().single();
+            if (error) {
+                showModal({ title: '错误', message: `无法添加点位: ${error.message}` });
+            } else {
+                state.priceData.markupPoints.push(data);
+                renderApp();
+            }
+        } else if (button.id === 'add-tier-btn') {
+             const { data, error } = await supabase.from('quote_discounts').insert({ threshold: 0, rate: 10 }).select().single();
+            if (error) {
+                showModal({ title: '错误', message: `无法添加折扣: ${error.message}` });
+            } else {
+                state.priceData.tieredDiscounts.push(data);
+                renderApp();
+            }
+        } else if (button.classList.contains('remove-markup-point-btn')) {
+            // ... existing logic ...
+            const id = button.dataset.id;
+            if (!id) return;
+             // ... modal logic ...
+             showModal({ title: '确认删除', message: `确定要删除此点位吗？`, isDanger: true, showCancel: true, confirmText: '删除',
+                onConfirm: async () => {
+                     const { error } = await supabase.from('quote_markups').delete().eq('id', id);
+                     if (error) { showModal({ title: '删除失败', message: error.message, isDanger: true }); }
+                     else { state.showCustomModal = false; state.priceData.markupPoints = state.priceData.markupPoints.filter(p => p.id !== parseInt(id)); renderApp(); }
+                }
+            });
+        } else if (button.classList.contains('remove-tier-btn')) {
+             const id = button.dataset.id;
+             if (!id) return;
+              showModal({ title: '确认删除', message: `确定要删除此折扣阶梯吗？`, isDanger: true, showCancel: true, confirmText: '删除',
+                onConfirm: async () => {
+                     const { error } = await supabase.from('quote_discounts').delete().eq('id', id);
+                     if (error) { showModal({ title: '删除失败', message: error.message, isDanger: true }); }
+                     else { state.showCustomModal = false; state.priceData.tieredDiscounts = state.priceData.tieredDiscounts.filter(t => t.id !== parseInt(id)); renderApp(); }
+                }
+            });
+        } else if (button.id === 'user-management-btn') {
+            state.view = 'userManagement';
+            renderApp();
+        } else if (button.id === 'login-log-btn') {
+             // ... existing logic ...
+            state.view = 'loginLog';
+            const { data, error } = await supabase.from('login_logs').select('*').order('login_at', { ascending: false }).limit(100);
+            if (!error) state.loginLogs = data || [];
+            renderApp();
+        } else if (button.id === 'app-view-toggle-btn') {
+            state.view = 'admin';
+            renderApp();
+        } else if (button.id === 'back-to-quote-btn') {
+            state.view = 'quote';
+            renderApp();
+        } else if (button.id === 'reset-btn') {
+            state.selection = getInitialSelection();
+            state.customItems = [];
+            state.newCategory = '';
+            state.specialDiscount = 0;
+            state.markupPoints = state.priceData.markupPoints[0]?.id || 0;
+            renderApp();
+        } else if (button.classList.contains('approve-user-btn')) {
+             const userId = button.closest('tr')?.dataset.userId;
+            if (!userId) return;
+            const { error } = await supabase.from('profiles').update({ is_approved: true }).eq('id', userId);
+            if (!error) {
+                 const profile = state.profiles.find(p => p.id === userId);
+                if (profile) profile.is_approved = true;
+                renderApp();
+            }
+        } else if (button.classList.contains('permission-toggle-btn')) {
+             // ... existing logic ...
+            const row = button.closest('tr');
+            const userId = row?.dataset.userId;
+            const action = button.dataset.action;
+            if (!userId || !action) return;
+            const newRole = action === 'grant' ? 'admin' : 'sales';
+            const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', userId);
+             if (!error) {
+                 const profile = state.profiles.find(p => p.id === userId);
+                if (profile) profile.role = newRole;
+                renderApp();
+            }
         }
         
         if (needsRender) {

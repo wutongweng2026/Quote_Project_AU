@@ -411,6 +411,7 @@ export function showModal(options: Partial<CustomModalState>) {
         onConfirm: defaultOnConfirm, // Start with the default
         confirmText: '确定',
         cancelText: '取消', showCancel: false, isDanger: false, errorMessage: '', 
+        isDismissible: true,
         ...options // If `options` contains an `onConfirm`, it will correctly override the default.
     };
     state.showCustomModal = true;
