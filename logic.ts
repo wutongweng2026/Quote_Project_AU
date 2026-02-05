@@ -168,6 +168,8 @@ export function addEventListeners() {
             registerButton.innerHTML = `<span class="spinner"></span> 正在注册`;
             errorDiv.style.display = 'none';
 
+            let isRateLimitError = false;
+
             try {
                 // Generate a new unique email for EVERY registration attempt to bypass potential rate-limiting issues.
                 const email = `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}@quotesystem.app`;
@@ -202,17 +204,22 @@ export function addEventListeners() {
                 });
 
             } catch(err: any) {
+                console.error('Registration error:', err); // For better debugging
                 let errorMessage: string;
 
                 if (err?.message) {
                     const lowerCaseMessage = err.message.toLowerCase();
                     if (lowerCaseMessage.includes('password should be at least')) {
                         errorMessage = '密码太短，至少需要6位字符。';
-                    } else if (err.code === '23505' || lowerCaseMessage.includes('unique constraint') || lowerCaseMessage.includes('duplicate key')) { 
+                    } else if (err.code === '23505' || lowerCaseMessage.includes('unique constraint') || lowerCaseMessage.includes('duplicate key') || lowerCaseMessage.includes('already exists')) { 
                         // Catches PostgreSQL unique constraint violation, e.g., on username
                         errorMessage = '该用户名已被注册，请尝试其他名称。';
-                    } else {
-                        // For rate limit and all other errors, show a generic message.
+                    } else if (lowerCaseMessage.includes('rate limit exceeded')) {
+                        errorMessage = '您的注册操作过于频繁，请稍候片刻再试。';
+                        isRateLimitError = true;
+                    }
+                    else {
+                        // For all other errors, show a generic message.
                         errorMessage = '注册失败，请稍后重试。';
                     }
                 } else {
@@ -222,8 +229,23 @@ export function addEventListeners() {
                 errorDiv.textContent = errorMessage;
                 errorDiv.style.display = 'block';
             } finally {
-                registerButton.disabled = false;
-                registerButton.innerHTML = '注册';
+                if (isRateLimitError) {
+                    let countdown = 10;
+                    registerButton.innerHTML = `请稍候 (${countdown}s)`;
+                    const interval = setInterval(() => {
+                        countdown--;
+                        if (countdown > 0) {
+                            registerButton.innerHTML = `请稍候 (${countdown}s)`;
+                        } else {
+                            clearInterval(interval);
+                            registerButton.disabled = false;
+                            registerButton.innerHTML = '注册';
+                        }
+                    }, 1000);
+                } else {
+                    registerButton.disabled = false;
+                    registerButton.innerHTML = '注册';
+                }
             }
 
         } else if (target.id === 'quick-add-form') {
@@ -572,7 +594,8 @@ export function addEventListeners() {
             reader.onload = async (event) => {
                 try {
                     const data = event.target?.result;
-                    const workbook = XLSX.read(data, { type: 'binary' });
+                    // FIX: Use 'array' type for XLSX.read to correspond with readAsArrayBuffer.
+                    const workbook = XLSX.read(data, { type: 'array' });
                     const sheetName = workbook.SheetNames[0];
                     const worksheet = workbook.Sheets[sheetName];
                     const json: (string|number)[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
@@ -618,7 +641,8 @@ export function addEventListeners() {
                     if(fileNameDisplay) fileNameDisplay.textContent = '';
                 }
             };
-            reader.readAsBinaryString(file);
+            // FIX: Use the modern and recommended readAsArrayBuffer method instead of the deprecated readAsBinaryString.
+            reader.readAsArrayBuffer(file);
             return;
         }
 
