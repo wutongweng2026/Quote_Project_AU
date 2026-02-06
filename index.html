@@ -219,6 +219,17 @@
         .user-actions { display: flex; gap: 0.5rem; align-items: center; }
         .user-actions .btn { padding: 0.3rem 0.8rem; font-size: 0.85rem; }
 
+        /* --- Log Summary --- */
+        #log-summary-content { line-height: 1.7; }
+        #log-summary-content h3 {
+            font-size: 1.1rem; color: var(--text-color);
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 0.5rem; margin-top: 1.5rem; margin-bottom: 1rem;
+        }
+        #log-summary-content ul { list-style-type: disc; padding-left: 20px; margin-top: 0.5rem; }
+        #log-summary-content li { margin-bottom: 0.5rem; }
+        #log-summary-content:first-child h3 { margin-top: 0; }
+
         .spinner {
             display: inline-block; width: 18px; height: 18px; border: 2px solid rgba(255,255,255,.3);
             border-radius: 50%; border-top-color: #fff; animation: spin 1s ease-in-out infinite; margin-right: 8px;
@@ -236,6 +247,7 @@
 <script type="importmap">
 {
   "imports": {
+    "@google/genai": "https://esm.sh/@google/genai",
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.94.1",
     "vite": "https://esm.sh/vite@^7.3.1"
   }

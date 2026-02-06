@@ -345,8 +345,18 @@ function renderLoginLogPanel() {
                <button id="back-to-quote-btn" class="header-btn">返回报价首页</button>
            </div>
        </header>
-       <div class="admin-content">
-           <div class="admin-section">
+       <div class="admin-content" style="padding: 2rem;">
+            <div class="admin-section">
+                <div class="admin-section-header">智能日志分析摘要</div>
+                <div class="admin-section-body">
+                    <div id="log-summary-loading" style="display: block;">
+                        <p>💡 正在为您生成日志摘要...</p>
+                    </div>
+                    <div id="log-summary-content" style="display: none;"></div>
+                </div>
+            </div>
+            <div class="admin-section">
+                <div class="admin-section-header">详细记录</div>
                 <div class="admin-section-body">
                    <table class="admin-data-table">
                        <thead>
@@ -364,7 +374,7 @@ function renderLoginLogPanel() {
                            ${state.loginLogs.length === 0 ? '<tr><td colspan="2" style="text-align: center;">没有日志记录。</td></tr>' : ''}
                        </tbody>
                    </table>
-               </div>
+                </div>
            </div>
        </div>
    </div>
