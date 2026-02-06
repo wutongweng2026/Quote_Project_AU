@@ -116,21 +116,75 @@ export function attachQuoteToolListeners() {
     $('#generate-quote-btn')?.addEventListener('click', handleExportExcel);
     $('#calc-quote-btn')?.addEventListener('click', () => { state.showFinalQuote = true; renderApp(); });
     $('#special-discount-input')?.addEventListener('input', (e) => { state.specialDiscount = Math.max(0, Number((e.target as HTMLInputElement).value)); updateTotalsUI(); });
-    $('.data-table')?.addEventListener('input', (e) => {
-        const target = e.target as HTMLInputElement;
-        const row = target.closest('tr');
-        if (!row || !target.classList.contains('quantity-input')) return;
-        const quantity = Math.max(0, parseInt(target.value, 10) || 0);
-        const category = row.dataset.category;
-        if (category && state.selection[category]) { state.selection[category].quantity = quantity; updateTotalsUI(); }
-    });
-    $('.data-table')?.addEventListener('change', (e) => {
-        const target = e.target as HTMLSelectElement;
-        const row = target.closest('tr');
-        if (!row || !target.classList.contains('model-select')) return;
-        const category = row.dataset.category;
-        if (category && state.selection[category]) { state.selection[category].model = target.value; updateTotalsUI(); }
-    });
+
+    // Consolidated listeners for the data table
+    const dataTable = $('.data-table');
+    if (dataTable) {
+        dataTable.addEventListener('input', (e) => {
+            const target = e.target as HTMLInputElement;
+            const row = target.closest('tr');
+            if (!row) return;
+
+            if (target.id === 'new-category-input') {
+                state.newCategory = target.value;
+                return;
+            }
+
+            const quantity = Math.max(0, parseInt(target.value, 10) || 0);
+
+            if (target.classList.contains('quantity-input')) {
+                const category = row.dataset.category;
+                if (category && state.selection[category]) { state.selection[category].quantity = quantity; }
+            } else if (target.classList.contains('custom-quantity-input')) {
+                const customId = Number(row.dataset.customId);
+                const item = state.customItems.find(i => i.id === customId);
+                if (item) { item.quantity = quantity; }
+            }
+            updateTotalsUI();
+        });
+
+        dataTable.addEventListener('change', (e) => {
+            const target = e.target as HTMLSelectElement;
+            const row = target.closest('tr');
+            if (!row) return;
+
+            if (target.classList.contains('model-select')) {
+                const category = row.dataset.category;
+                if (category && state.selection[category]) { state.selection[category].model = target.value; }
+            } else if (target.classList.contains('custom-model-select')) {
+                const customId = Number(row.dataset.customId);
+                const item = state.customItems.find(i => i.id === customId);
+                if (item) { item.model = target.value; }
+            }
+            updateTotalsUI();
+        });
+
+        dataTable.addEventListener('click', (e) => {
+            const target = e.target as HTMLElement;
+            const button = target.closest('button');
+            if (!button) return;
+
+            if (button.id === 'add-category-btn') {
+                const categoryName = state.newCategory.trim();
+                if (!categoryName) {
+                    return showModal({ title: '输入错误', message: '请输入新类别的名称。' });
+                }
+                const newId = state.customItems.length > 0 ? Math.max(...state.customItems.map(item => item.id)) + 1 : 1;
+                state.customItems.push({ id: newId, category: categoryName, model: '', quantity: 1 });
+                state.newCategory = '';
+                renderApp();
+            } else if (button.classList.contains('remove-custom-item-btn')) {
+                const row = button.closest('tr');
+                if (!row) return;
+                const customId = Number(row.dataset.customId);
+                if (!isNaN(customId)) {
+                    state.customItems = state.customItems.filter(item => item.id !== customId);
+                    renderApp();
+                }
+            }
+        });
+    }
+
     $('#discount-select, #markup-points-select')?.addEventListener('change', (e) => {
         const target = e.target as HTMLSelectElement;
         if (target.id === 'discount-select') state.selectedDiscountId = target.value === 'none' ? 'none' : parseInt(target.value, 10);
