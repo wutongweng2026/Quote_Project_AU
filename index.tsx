@@ -1,7 +1,6 @@
 
 import { supabase, state } from './state';
 import { renderApp, showModal } from './ui';
-import { addEventListeners } from './logic';
 import { seedDataObject } from './seedData';
 import type { DbProfile, Prices, DbQuoteItem } from './types';
 
@@ -103,6 +102,54 @@ async function loadAllData(): Promise<boolean> {
     }
 }
 
+async function checkAndFixDbSchema() {
+    if (state.hasAttemptedDbFix) return;
+    state.hasAttemptedDbFix = true;
+
+    try {
+        const { error } = await supabase.from('quote_items').select('is_priority').limit(1);
+
+        if (!error) return; // Column exists, no problem.
+
+        const errMessage = error.message.toLowerCase();
+
+        if (errMessage.includes('column "is_priority" does not exist')) {
+            showModal({
+                title: '数据库需更新',
+                message: `
+                    <p>系统检测到您的 "quote_items" 表缺少 <strong>is_priority</strong> 字段，这是“优先推荐”功能所必需的。</p>
+                    <p>请按以下步骤在 Supabase 中添加该字段：</p>
+                    <ol style="text-align: left; padding-left: 20px; line-height: 1.8;">
+                        <li>登录 Supabase，进入项目的 "Table Editor"。</li>
+                        <li>选择 "quote_items" 表。</li>
+                        <li>点击 "+ Add column"。</li>
+                        <li>名称: <strong>is_priority</strong></li>
+                        <li>类型: <strong>bool</strong></li>
+                        <li>默认值: <strong>false</strong></li>
+                        <li>点击 "Save" 保存。</li>
+                    </ol>
+                    <p>添加成功后，请<strong>刷新本页面</strong>以应用更改。</p>
+                `,
+                confirmText: '好的',
+                isDismissible: false,
+            });
+        } else if (errMessage.includes('could not find the')) {
+            showModal({
+                title: '数据库缓存问题',
+                message: `
+                    <p>应用无法访问 "is_priority" 字段，这可能是由于数据库的元数据缓存未更新。</p>
+                    <p>请尝试在 Supabase 项目的 "API Docs" 页面，点击 "Reload schema" 按钮，然后刷新本页面。</p>
+                    <p>如果问题仍存在，请检查 "quote_items" 表的行级安全策略 (RLS) 是否允许您的角色访问 "is_priority" 字段。</p>
+                `,
+                confirmText: '好的',
+            });
+        }
+    } catch (e) {
+        console.error("Error during DB schema check:", e);
+    }
+}
+
+
 async function handleUserSession(session) {
     if (!session?.user) {
         state.currentUser = null;
@@ -147,6 +194,7 @@ async function handleUserSession(session) {
                 await seedDatabaseIfNeeded();
                 await loadAllData(); // Reload after seeding
             }
+            await checkAndFixDbSchema();
         } else {
             state.profiles = [profile];
         }
@@ -158,8 +206,6 @@ async function handleUserSession(session) {
 
 
 async function initializeApp() {
-    addEventListeners();
-    
     // Listen for future auth changes (login/logout)
     supabase.auth.onAuthStateChange(async (event, session) => {
         // We only care about SIGNED_IN and SIGNED_OUT events to avoid redundant runs

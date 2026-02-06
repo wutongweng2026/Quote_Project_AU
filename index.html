@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>产品报价系统 v2.1 - 龙盛科技</title>
+    <title>产品报价系统 --龙盛科技</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -13,14 +13,26 @@
         :root {
             --primary-color: #22c55e;
             --primary-color-hover: #16a34a;
+            --primary-color-light: #dcfce7;
+            --primary-text-contrast: #ffffff;
             --secondary-color: #3b82f6;
+            --secondary-color-hover: #2563eb;
             --danger-color: #ef4444;
-            --background-color: #f1f5f9;
-            --text-color: #1e293b;
-            --secondary-text-color: #64748b;
-            --card-background: #ffffff;
+            --danger-color-hover: #dc2626;
+            --danger-color-light: #fee2e2;
+            --background-color: #f8fafc;
+            --surface-color: #ffffff;
             --border-color: #e2e8f0;
+            --text-color-primary: #1e293b;
+            --text-color-secondary: #64748b;
             --font-family: 'Noto Sans SC', sans-serif;
+            --border-radius-sm: 4px;
+            --border-radius-md: 8px;
+            --border-radius-lg: 16px;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            --transition-fast: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         *, *::before, *::after { box-sizing: border-box; }
@@ -29,7 +41,7 @@
             font-family: var(--font-family);
             margin: 0;
             background-color: var(--background-color);
-            color: var(--text-color);
+            color: var(--text-color-primary);
             line-height: 1.6;
             display: flex;
             justify-content: center;
@@ -39,209 +51,124 @@
         #app {
             width: 100%;
             max-width: 900px;
-            background: var(--card-background);
-            border-radius: 16px;
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            background: var(--surface-color);
+            border-radius: var(--border-radius-lg);
+            box-shadow: var(--shadow-lg);
             overflow: hidden;
             min-height: 500px;
+            display: flex;
+            flex-direction: column;
         }
 
-        /* --- Global Loading & Status --- */
-        .app-status-container {
-            display: flex; flex-direction: column; justify-content: center;
-            align-items: center; min-height: 500px; text-align: center; padding: 2rem;
-        }
-        .loading-spinner {
-            width: 48px; height: 48px; border: 5px solid #e2e8f0; border-top-color: var(--primary-color);
-            border-radius: 50%; animation: spin 0.8s linear infinite;
-        }
+        h1, h2, h3 { color: var(--text-color-primary); font-weight: 700; }
+        h1 { font-size: 1.5rem; } h2 { font-size: 1.25rem; }
+
+        /* --- Global Components & States --- */
+        .app-status-container { flex-grow: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 2rem; }
+        .loading-spinner { width: 48px; height: 48px; border: 5px solid var(--border-color); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 0.8s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
+        
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            padding: 0.6rem 1.2rem; border-radius: var(--border-radius-md); font-weight: 600; cursor: pointer;
+            border: 1px solid transparent; color: var(--primary-text-contrast); transition: var(--transition-fast);
+            white-space: nowrap; font-size: 0.95rem;
+        }
+        .btn:hover { transform: translateY(-1px); box-shadow: var(--shadow-md); }
+        .btn:active { transform: translateY(0); box-shadow: var(--shadow-sm); }
+        .btn:disabled { background-color: #94a3b8 !important; cursor: not-allowed; transform: none; box-shadow: none; }
+        .btn-primary { background-color: var(--primary-color); } .btn-primary:hover { background-color: var(--primary-color-hover); }
+        .btn-secondary { background-color: var(--secondary-color); } .btn-secondary:hover { background-color: var(--secondary-color-hover); }
+        .btn-danger { background-color: var(--danger-color); } .btn-danger:hover { background-color: var(--danger-color-hover); }
+        .btn-ghost { background-color: transparent; border-color: var(--border-color); color: var(--text-color-secondary); } .btn-ghost:hover { background-color: #f1f5f9; color: var(--text-color-primary); border-color: #cbd5e1; }
+
+        .form-input, .form-select {
+            width: 100%; padding: 0.7rem 0.9rem; font-size: 1rem; border-radius: var(--border-radius-md); border: 1px solid var(--border-color);
+            outline: none; transition: var(--transition-fast); background-color: #f8fafc;
+        }
+        .form-input:focus, .form-select:focus { border-color: var(--secondary-color); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); background-color: var(--surface-color); }
 
         /* --- Auth View --- */
-        .auth-container { padding: 3rem 2rem; display: flex; justify-content: center; align-items: center; min-height: 500px; }
+        .auth-container { flex-grow: 1; padding: 3rem 2rem; display: flex; justify-content: center; align-items: center; }
         .auth-box { width: 100%; max-width: 380px; }
-        .auth-box h1 { text-align: center; font-size: 1.75rem; margin-bottom: 2rem; color: #0f172a; font-weight: 700; }
+        .auth-box h1 { text-align: center; margin-bottom: 2.5rem; }
         .auth-input-group { margin-bottom: 1.25rem; }
-        .auth-input-group label { display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--secondary-text-color); }
-        .auth-input-group input, .auth-input-group select {
-            width: 100%; padding: 0.75rem 1rem; font-size: 1rem; border-radius: 8px; border: 1px solid var(--border-color);
-            outline: none; transition: border-color 0.2s, box-shadow 0.2s;
-        }
-        .auth-input-group input:focus { border-color: var(--secondary-color); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
-        .auth-button {
-            width: 100%; padding: 0.8rem; font-size: 1.1rem; background: var(--primary-color); color: white; border: none;
-            border-radius: 8px; cursor: pointer; font-weight: 600; transition: background-color 0.2s; margin-top: 1rem;
-        }
-        .auth-button:hover { background: var(--primary-color-hover); }
-        .auth-button:disabled { background: #94a3b8; cursor: not-allowed; }
-        .auth-error {
-            background-color: #fef2f2; color: #dc2626; padding: 0.75rem 1rem; border-radius: 8px;
-            margin-bottom: 1.5rem; border-left: 4px solid var(--danger-color); font-size: 0.9rem;
-        }
+        .auth-input-group label { display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-color-secondary); }
+        .auth-button { width: 100%; padding: 0.8rem; font-size: 1.1rem; margin-top: 1rem; }
+        .auth-error { background-color: var(--danger-color-light); color: #991b1b; padding: 0.8rem 1rem; border-radius: var(--border-radius-md); margin-bottom: 1.5rem; border-left: 4px solid var(--danger-color); font-size: 0.9rem; }
 
-        /* --- Quote Tool & General Styles --- */
-        .btn {
-            padding: 0.5rem 1rem; border-radius: 6px; font-weight: 600; cursor: pointer;
-            border: none; color: white; transition: opacity 0.2s;
-        }
-        .btn:hover { opacity: 0.9; }
-        .btn-primary { background-color: var(--primary-color); }
-        .btn-secondary { background-color: var(--secondary-color); }
-        .btn-danger { background-color: var(--danger-color); }
-
-        .quoteContainer { padding: 0; }
-        .quoteHeader, .adminHeader {
+        /* --- Main Layout --- */
+        .app-layout { display: flex; flex-direction: column; height: 100%; }
+        .app-header {
             padding: 1.25rem 2rem; border-bottom: 1px solid var(--border-color);
             display: flex; justify-content: space-between; align-items: center;
-            background: var(--primary-color); color: white;
+            background: var(--primary-color); color: var(--primary-text-contrast);
         }
-        .quoteHeader h1, .adminHeader h2 { margin: 0; font-size: 1.4rem; color: white; }
-        .quoteHeader h1 span { font-size: 0.9rem; opacity: 0.8; font-weight: 400; }
+        .app-header h1, .app-header h2 { margin: 0; font-size: 1.4rem; color: var(--primary-text-contrast); }
+        .app-header h1 span { font-size: 0.9rem; opacity: 0.8; font-weight: 400; }
         .header-actions { display: flex; align-items: center; gap: 0.75rem; }
-        .header-actions .header-btn {
-            background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3);
-            color: white; padding: 0.4rem 0.8rem; font-size: 0.85rem; border-radius: 6px; cursor: pointer;
-        }
+        .header-actions .header-btn { background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); color: var(--primary-text-contrast); padding: 0.4rem 0.8rem; font-size: 0.85rem; border-radius: var(--border-radius-md); cursor: pointer; transition: var(--transition-fast); }
         .header-actions .header-btn:hover { background: rgba(255, 255, 255, 0.25); }
-        .update-timestamp { font-size: 0.8rem; color: white; opacity: 0.8; }
-        .quoteBody { padding: 2rem; }
+        .update-timestamp { font-size: 0.8rem; opacity: 0.8; }
+        .app-body { flex-grow: 1; padding: 2rem; overflow-y: auto; }
+        .app-footer { padding: 1.5rem 2rem; background: #f8fafc; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
 
-        .product-matcher-section {
-            background-color: #f8fafc; padding: 1.5rem; border-radius: 12px;
-            margin-bottom: 2rem; border: 1px solid var(--border-color);
-        }
+        /* --- Quote Tool Specifics --- */
+        .product-matcher-section { background-color: var(--background-color); padding: 1.5rem; border-radius: var(--border-radius-lg); margin-bottom: 2rem; border: 1px solid var(--border-color); }
         .matcher-input-group { display: flex; gap: 1rem; margin-top: 0.75rem; }
-        .matcher-input-group input { flex-grow: 1; padding: 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); font-family: inherit; width: 100%; font-size: 1rem; }
-        .matcher-input-group button { white-space: nowrap; }
-
-        .config-table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; }
-        .config-table th {
-            text-align: left; padding: 0.75rem 1rem; border-bottom: 2px solid var(--border-color);
-            color: var(--secondary-text-color); font-weight: 600; text-transform: uppercase; font-size: 0.8rem;
-        }
-        .config-table td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-color); vertical-align: middle; }
-        .config-row-action button {
-            width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--border-color); background-color: #f8fafc;
-            cursor: pointer; font-size: 1.2rem; color: #94a3b8; display: flex; align-items: center; justify-content: center;
-        }
-        .config-row-action button:not(:disabled):hover { background-color: #f1f5f9; color: var(--text-color); }
-        .config-row-action button:disabled { cursor: not-allowed; }
-        #add-category-btn { background-color: var(--primary-color) !important; color: white !important; }
-
-        .model-select, #new-category-input, .quantity-input {
-            width: 100%; padding: 0.6rem; border-radius: 6px; border: 1px solid var(--border-color);
-        }
-        .quantity-input { width: 70px; text-align: center; }
-
-        .final-config-section { margin-top: 2rem; }
-        .final-config-section label { display: block; margin-bottom: 0.75rem; font-weight: 600; color: #475569; }
-        .final-config-section textarea {
-            width: 100%; height: 100px; border-radius: 8px; border: 1px solid var(--border-color);
-            padding: 1rem; font-family: inherit; font-size: 0.95rem; background: #f8fafc;
-            resize: vertical; color: #334155;
-        }
-
+        .matcher-input-group input { flex-grow: 1; }
+        .final-config-section textarea { width: 100%; height: 100px; resize: vertical; font-family: 'Menlo', 'Consolas', monospace; }
         .controls-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-top: 2rem; align-items: end; }
         .control-group label { display: block; margin-bottom: 0.5rem; font-weight: 500; color: #475569; }
-        .control-group select, .control-group input { width: 100%; padding: 0.6rem; border-radius: 6px; border: 1px solid var(--border-color); }
-
-        .quoteFooter {
-            padding: 1.5rem 2rem; background: #f8fafc; border-top: 1px solid var(--border-color);
-            display: flex; justify-content: space-between; align-items: center; margin-top: 2rem;
-        }
         .quoteFooter strong { font-size: 1.6rem; color: var(--primary-color); margin-left: 0.5rem;}
-        .quoteFooter .final-price-display span { color: var(--secondary-text-color); }
+        .quoteFooter .final-price-display span { color: var(--text-color-secondary); }
         .footer-buttons { display: flex; gap: 1rem; }
-        .footer-buttons .btn { padding: 0.75rem 1.5rem; }
+
+        /* --- Data Tables --- */
+        .data-table-container { border: 1px solid var(--border-color); border-radius: var(--border-radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); }
+        .data-table { width: 100%; border-collapse: collapse; }
+        .data-table th, .data-table td { padding: 0.8rem 1rem; border-bottom: 1px solid var(--border-color); text-align: left; vertical-align: middle; }
+        .data-table thead { background-color: var(--background-color); }
+        .data-table th { font-weight: 600; color: var(--text-color-secondary); font-size: 0.85rem; text-transform: uppercase; }
+        .data-table tbody tr:last-child td { border-bottom: none; }
+        .data-table tbody tr:nth-child(even) { background-color: #fdfdff; }
+        .data-table tbody tr:hover { background-color: var(--primary-color-light); }
+        .data-table .price-input { width: 100px; text-align: right; }
+        .data-table .priority-checkbox { width: 18px; height: 18px; }
+        
+        /* --- Admin & User Management --- */
+        .admin-section { border: 1px solid var(--border-color); border-radius: var(--border-radius-lg); margin-bottom: 2rem; overflow: hidden; background: var(--surface-color); box-shadow: var(--shadow-sm); }
+        .admin-section-header { background-color: #f1f5f9; color: var(--text-color-primary); padding: 1rem 1.5rem; font-size: 1.1rem; font-weight: 600; border-bottom: 1px solid var(--border-color); }
+        .admin-section-body { padding: 1.5rem; }
+        .admin-section-body p { color: var(--text-color-secondary); font-size: 0.9rem; margin-top: 0; }
+        .admin-row { display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem; }
+        .admin-row input { padding: 0.6rem; }
+        .add-new-placeholder { border: 2px dashed var(--border-color); border-radius: var(--border-radius-md); text-align: center; padding: 1rem; color: var(--text-color-secondary); cursor: pointer; transition: var(--transition-fast); }
+        .add-new-placeholder:hover { background-color: var(--background-color); border-color: #cbd5e1; }
+        .user-management-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 1rem; margin-bottom: 1.5rem; border-bottom: 2px solid var(--primary-color); }
+        .role-badge, .status-badge { padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.8rem; font-weight: 500; }
+        .role-badge-admin { background-color: #dbeafe; color: #1e40af; } .role-badge-manager { background-color: #ede9fe; color: #5b21b6; }
+        .status-badge-approved { background-color: var(--primary-color-light); color: #166534; } .status-badge-pending { background-color: #fef9c3; color: #854d0e; }
+        .actions-cell { display: flex; gap: 0.5rem; align-items: center; }
 
         /* --- Modals --- */
-        .modal-overlay {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.4);
-            backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 1000;
-        }
-        .modal-content {
-            background: white; padding: 2rem; border-radius: 16px; width: 100%; max-width: 440px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
-        }
-        .modal-content h2 { margin-top: 0; color: #0f172a; }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 1rem; }
+        .modal-content { background: var(--surface-color); border-radius: var(--border-radius-lg); width: 100%; max-width: 460px; box-shadow: var(--shadow-lg); display: flex; flex-direction: column; }
+        .modal-header { padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-color); }
+        .modal-header h2 { margin: 0; font-size: 1.2rem; }
+        .modal-body { padding: 1.5rem; } .modal-body ol { line-height: 1.8; }
+        .modal-footer { padding: 1rem 1.5rem; background: var(--background-color); border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: 1rem; border-bottom-left-radius: var(--border-radius-lg); border-bottom-right-radius: var(--border-radius-lg); }
         .modal-error { color: var(--danger-color); margin-top: 1rem; font-size: 0.9rem; }
-        .modal-buttons { display: flex; justify-content: flex-end; gap: 1rem; margin-top: 2rem; }
-        .modal-buttons button { padding: 0.6rem 1.2rem; border-radius: 6px; cursor: pointer; border: none; font-weight: 600; }
-        #custom-modal-confirm-btn { background: var(--primary-color); color: white; }
-        #custom-modal-cancel-btn { background: #f1f5f9; color: #475569; }
 
-        /* --- Admin Panel Styles --- */
-        .adminContainer, .user-management-container { padding: 2rem; }
-        .admin-section { border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 2rem; overflow: hidden; }
-        .admin-section-header { background-color: var(--primary-color); color: white; padding: 1rem 1.5rem; font-size: 1.1rem; font-weight: 600; }
-        .admin-section-body { padding: 1.5rem; }
-        .admin-section-body p { color: var(--secondary-text-color); font-size: 0.9rem; margin-top: 0; }
-        .markup-point-row, .tier-row, .quick-add-form { display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem; }
-        .markup-point-row input, .tier-row input { padding: 0.5rem; border-radius: 4px; border: 1px solid var(--border-color); }
-        .markup-alias-input { flex-grow: 1; }
-        .add-new-placeholder {
-            border: 2px dashed var(--border-color); border-radius: 8px; text-align: center;
-            padding: 1rem; color: var(--secondary-text-color); cursor: pointer;
-        }
-        .add-new-placeholder:hover { background-color: #f8fafc; }
-        .quick-add-form input { flex: 1; }
-        .import-section { margin-top: 1rem; }
-        #admin-search-input { width: 100%; margin-bottom: 1rem; padding: 0.75rem; border-radius: 6px; border: 1px solid var(--border-color); }
-        .admin-data-table { width: 100%; border-collapse: collapse; }
-        .admin-data-table th, .admin-data-table td { padding: 0.75rem; border: 1px solid var(--border-color); text-align: left; }
-        .admin-data-table th { background-color: #f8fafc; }
-        .admin-data-table .price-input { width: 100px; }
-        .admin-data-table td .btn { padding: 0.3rem 0.6rem; font-size: 0.8rem; margin-right: 0.5rem;}
-        
-        /* --- User Management --- */
-        .user-management-container { background-color: var(--card-background); }
-        .user-management-header {
-            display: flex; justify-content: space-between; align-items: center;
-            padding-bottom: 1rem; margin-bottom: 1.5rem;
-            border-bottom: 1px solid var(--primary-color);
-        }
-        .user-management-header h2 { margin: 0; color: var(--text-color); }
-        .user-table-card {
-            background-color: white; border-radius: 8px;
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.05);
-            overflow: hidden; border: 1px solid var(--border-color);
-        }
-        .user-table { width: 100%; border-collapse: collapse; }
-        .user-table th, .user-table td { padding: 1rem; text-align: left; border-bottom: 1px solid var(--border-color); }
-        .user-table thead { background-color: #f8fafc; }
-        .user-table th { font-weight: 600; color: var(--secondary-text-color); font-size: 0.9rem; }
-        .user-table tbody tr:last-child td { border-bottom: none; }
-        .role-badge, .status-badge { padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.8rem; font-weight: 500; }
-        .role-badge-admin { background-color: #dbeafe; color: #1e40af; }
-        .role-badge-manager { background-color: #ede9fe; color: #5b21b6; }
-        .status-badge-approved { background-color: #dcfce7; color: #166534; }
-        .status-badge-pending { background-color: #fef9c3; color: #854d0e; }
-        .user-actions { display: flex; gap: 0.5rem; align-items: center; }
-        .user-actions .btn { padding: 0.3rem 0.8rem; font-size: 0.85rem; }
-
-        /* --- Log Summary --- */
-        #log-summary-content { line-height: 1.7; }
-        #log-summary-content h3 {
-            font-size: 1.1rem; color: var(--text-color);
-            border-bottom: 2px solid var(--border-color);
-            padding-bottom: 0.5rem; margin-top: 1.5rem; margin-bottom: 1rem;
-        }
-        #log-summary-content ul { list-style-type: disc; padding-left: 20px; margin-top: 0.5rem; }
-        #log-summary-content li { margin-bottom: 0.5rem; }
-        #log-summary-content:first-child h3 { margin-top: 0; }
-
-        .spinner {
-            display: inline-block; width: 18px; height: 18px; border: 2px solid rgba(255,255,255,.3);
-            border-radius: 50%; border-top-color: #fff; animation: spin 1s ease-in-out infinite; margin-right: 8px;
-        }
+        /* --- Utility & Misc --- */
+        .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid rgba(255,255,255,.3); border-radius: 50%; border-top-color: #fff; animation: spin 1s ease-in-out infinite; margin-right: 8px; }
 
         @media (max-width: 640px) {
             body { padding: 0.5rem; } #app { border-radius: 0; min-height: 100vh; }
-            .quoteHeader, .adminHeader, .quoteBody, .quoteFooter { padding: 1rem; }
-            .quoteHeader, .adminHeader { flex-direction: column; gap: 1rem; align-items: flex-start; }
-            .quoteFooter { flex-direction: column; gap: 1rem; align-items: flex-start; }
-            .footer-buttons { width: 100%; }
-            .footer-buttons button { flex: 1; }
+            .app-header { flex-direction: column; gap: 1rem; align-items: flex-start; }
+            .app-body { padding: 1rem; }
+            .app-footer { flex-direction: column; gap: 1rem; align-items: flex-start; }
+            .footer-buttons { width: 100%; } .footer-buttons button { flex: 1; }
         }
     </style>
 <script type="importmap">
@@ -259,7 +186,7 @@
     <div id="app">
         <div class="app-status-container">
             <div class="loading-spinner"></div>
-            <h2 style="margin-top: 1.5rem; color: #64748b;">正在加载...</h2>
+            <h2 style="margin-top: 1.5rem; color: var(--text-color-secondary);">正在加载...</h2>
         </div>
     </div>
     <script type="module" src="/index.tsx"></script>
